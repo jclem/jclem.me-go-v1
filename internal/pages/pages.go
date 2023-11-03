@@ -3,6 +3,7 @@ package pages
 import (
 	"embed"
 	"fmt"
+	"html/template"
 
 	"github.com/jclem/jclem.me/internal/markdown"
 )
@@ -11,7 +12,7 @@ type Page struct {
 	Slug        string `yaml:"slug"`
 	Title       string `yaml:"title"`
 	Description string `yaml:"description"`
-	Content     string
+	Content     template.HTML
 }
 
 //go:embed *.md
@@ -34,7 +35,7 @@ func (s *Service) Start() error {
 			return fmt.Errorf("error unmarshaling page frontmatter: %w", err)
 		}
 
-		page.Content = document.Content
+		page.Content = template.HTML(document.Content) //nolint:gosec
 
 		s.pages = append(s.pages, page)
 	}

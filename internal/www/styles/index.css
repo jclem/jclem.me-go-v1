@@ -1,0 +1,199 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+@import url("https://fonts.googleapis.com/css2?family=Hanken+Grotesk:ital,wght@0,400;0,600;0,700;1,400;1,600;1,700&family=Martian+Mono:wght@400;700&display=swap");
+
+@font-face {
+  font-family: "Berkeley Mono";
+  src: url("/public/fonts/BerkeleyMono-Regular.woff2") format("woff2");
+}
+
+@layer base {
+  :root {
+    --color-border: theme("colors.zinc.400");
+    --color-canvas: theme("colors.white");
+    --color-card: theme("colors.zinc.50");
+    --color-card-text: theme("colors.zinc.800");
+    --color-text: theme("colors.zinc.800");
+    --color-text-deemphasize: theme("colors.zinc.500");
+    --color-code-bg: theme("colors.zinc.200");
+    --color-highlight: theme("colors.emerald.700");
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --color-border: theme("colors.zinc.500");
+      --color-canvas: theme("colors.zinc.800");
+      --color-card: theme("colors.zinc.700");
+      --color-card-text: theme("colors.zinc.100");
+      --color-text: theme("colors.zinc.100");
+      --color-text-deemphasize: theme("colors.zinc.400");
+      --color-code-bg: theme("colors.zinc.900");
+      --color-highlight: theme("colors.emerald.500");
+    }
+  }
+
+  html,
+  body {
+    @apply bg-canvas;
+  }
+
+  body {
+    @apply mx-auto max-w-3xl w-full p-4 sm:p-8 flex flex-col gap-8;
+    @apply bg-canvas;
+    @apply font-sans text-text antialiased;
+  }
+
+  article {
+    @apply flex max-w-2xl flex-col gap-3;
+    @apply hyphens-auto;
+  }
+
+  article > h1 {
+    @apply mb-4;
+  }
+
+  article > h2,
+  article > h3,
+  article > h4,
+  article > h5,
+  article > h6 {
+    @apply mt-4;
+  }
+
+  article ul,
+  article ol {
+    @apply ml-4 sm:ml-0;
+  }
+
+  article ul {
+    @apply list-disc;
+  }
+
+  article ol {
+    @apply list-decimal;
+  }
+
+  article li::marker {
+    @apply text-text-deemphasize;
+  }
+
+  article hr {
+    @apply border-border;
+  }
+
+  article > :not(pre) > code {
+    @apply bg-code-bg text-sm;
+  }
+
+  article mjx-container[jax="SVG"][display="true"] {
+    @apply flex justify-center;
+  }
+
+  article mjx-container[jax="SVG"]:not([display="true"]) svg {
+    @apply inline;
+  }
+
+  article blockquote {
+    @apply border-l border-border pl-2 pr-4 sm:pl-6 sm:pr-8;
+    @apply text-text-deemphasize text-sm;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-mono font-semibold;
+  }
+
+  h1 {
+    @apply text-2xl;
+  }
+
+  h2 {
+    @apply text-xl;
+  }
+
+  h3 {
+    @apply text-lg;
+  }
+
+  dl {
+    @apply grid font-mono text-sm sm:text-xs;
+    grid-template-columns: 1fr 4fr;
+  }
+
+  dl dt,
+  dl dd {
+    @apply border border-b-0 border-border p-1 last-of-type:border-b;
+  }
+
+  dl dt {
+    @apply font-bold;
+  }
+
+  dl dd {
+    @apply border-l-0;
+  }
+
+  details {
+    @apply border border-dashed border-border p-2 text-sm;
+  }
+
+  summary {
+    @apply select-none;
+  }
+
+  summary::marker {
+    @apply text-text-deemphasize;
+  }
+
+  a {
+    @apply text-highlight underline underline-offset-2;
+  }
+}
+
+@layer utilities {
+  .card {
+    @apply bg-card text-card-text;
+  }
+
+  .code-example {
+    @apply card border border-solid border-border leading-tight;
+  }
+}
+
+@layer components {
+  .img-figure,
+  .vid-figure {
+    @apply flex flex-col gap-2;
+  }
+
+  .img-figure figcaption,
+  .vid-figure figcaption {
+    @apply text-sm text-text-deemphasize text-center italic;
+  }
+
+  .vid-figure video {
+    @apply w-full;
+  }
+
+  .footnote {
+    @apply text-xs align-super;
+  }
+
+  .footnotes > ol {
+    @apply mt-2;
+    @apply text-sm text-text-deemphasize;
+  }
+
+  .footnotes > ol > li {
+    @apply relative;
+  }
+
+  .reversefootnote {
+    @apply ml-1 text-xs;
+  }
+}

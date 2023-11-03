@@ -1,0 +1,56 @@
+{{define "home"}}
+<main class="flex flex-col gap-6">
+	<header class="flex flex-col gap-6">
+		<div class="flex items-center gap-4">
+			<img
+				src="https://www.jclem.me/images/jclem.webp"
+				alt="Photograph of Jonathan Clem"
+				class="rounded-full h-12 w-12" />
+			<h1>Jonathan Clem</h1>
+		</div>
+
+		<dl>
+			<dt>Occupation</dt>
+			<dd>Software Engineer</dd>
+
+			<dt>Employer</dt>
+			<dd>
+				<a href="https://www.github.com">GitHub</a>
+			</dd>
+
+			<dt>Title</dt>
+			<dd>Principal Software Engineer</dd>
+
+			<dt>Location</dt>
+			<dd>
+				<a href="https://www.openstreetmap.org/relation/9691750">
+					Brooklyn, New York
+				</a>
+			</dd>
+
+			<dt>Twitter</dt>
+			<dd>
+				<a href="https://twitter.com/jclem" title="Twitter profile">
+					@jclem
+				</a>
+			</dd>
+
+			<dt>GitHub</dt>
+			<dd>
+				<a href="https://github.com/jclem" title="GitHub profile">
+					jclem
+				</a>
+			</dd>
+
+			<dt>Mastodon</dt>
+			<dd>
+				<a rel="me" href="https://hachyderm.io/@jtc" title="Mastodon profile">
+					@jtc@hachyderm.io
+				</a>
+			</dd>
+		</dl>
+	</header>
+
+	<article>{{.Content}}</article>
+</main>
+{{end}}

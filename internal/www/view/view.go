@@ -52,15 +52,6 @@ type renderedPage struct {
 	Content     template.HTML
 }
 
-func (s *Service) RenderPage(w io.Writer, name string) error {
-	page, err := s.pages.Get(name)
-	if err != nil {
-		return fmt.Errorf("error getting document: %w", err)
-	}
-
-	return s.renderRoot(w, page.Title, page.Description, template.HTML(page.Content)) //nolint:gosec
-}
-
 func (s *Service) RenderTemplate(w io.Writer, name string, data any, opts ...RenderOpt) error {
 	ropts := &renderOpts{}
 	for _, opt := range opts {

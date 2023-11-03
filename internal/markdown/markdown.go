@@ -7,7 +7,9 @@ import (
 	"io/fs"
 
 	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
+	"github.com/yuin/goldmark/renderer/html"
 	"go.abhg.dev/goldmark/frontmatter"
 )
 
@@ -48,7 +50,13 @@ func (s *Service) Get(path string) (Document, error) {
 func (s *Service) Load() error {
 	gm := goldmark.New(
 		goldmark.WithExtensions(
+			extension.NewFootnote(),
+			extension.NewTypographer(),
+			extension.NewLinkify(),
 			&frontmatter.Extender{},
+		),
+		goldmark.WithRendererOptions(
+			html.WithUnsafe(),
 		),
 	)
 

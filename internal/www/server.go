@@ -3,6 +3,7 @@ package www
 import (
 	"errors"
 	"fmt"
+	"html/template"
 	"net/http"
 	"os"
 	"time"
@@ -14,6 +15,7 @@ import (
 )
 
 type Server struct {
+	pages *pages.Service
 	posts *posts.Service
 	view  *view.Service
 }
@@ -35,6 +37,7 @@ func New() (*Server, error) {
 	}
 
 	return &Server{
+		pages: pagesSvc,
 		posts: postsSvc,
 		view:  viewSvc,
 	}, nil
@@ -43,9 +46,10 @@ func New() (*Server, error) {
 func (s *Server) Start() error {
 	router := chi.NewRouter()
 	router.Get("/meta/healthcheck", s.healthcheck())
-	router.Get("/", s.renderPage("about"))
+	router.Get("/", s.renderHome())
 	router.Get("/writing", s.listPosts())
 	router.Get("/writing/{slug}", s.showPost())
+	router.Handle("/public/*", http.StripPrefix("/public/", http.FileServer(http.Dir("internal/www/public"))))
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -67,9 +71,19 @@ func (s *Server) Start() error {
 	return nil
 }
 
-func (s *Server) renderPage(name string) http.HandlerFunc {
+func (s *Server) renderHome() http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
-		if err := s.view.RenderPage(w, name); err != nil {
+		page, err := s.pages.Get("about")
+		if err != nil {
+			http.Error(w, fmt.Sprintf("error getting page: %s", err), http.StatusInternalServerError)
+
+			return
+		}
+
+		if err := s.view.RenderTemplate(w, "home", struct{ Content template.HTML }{Content: page.Content},
+			view.WithTitle(page.Title),
+			view.WithDescription(page.Description),
+		); err != nil {
 			http.Error(w, fmt.Sprintf("error rendering page: %s", err), http.StatusInternalServerError)
 
 			return

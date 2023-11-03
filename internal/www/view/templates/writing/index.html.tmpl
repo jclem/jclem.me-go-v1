@@ -6,7 +6,7 @@
 		{{range .Posts}}
 		<li class="flex flex-col divide-y divide-dashed divide-border">
 			<a href="/writing/{{.Slug}}" class="p-1">{{.Title}}</a>
-			<datetime datetime="{{.PublishedAt}}" class="p-1" />
+			<datetime datetime="{{.PublishedAt}}" class="p-1">{{.PublishedAt}}</datetime>
 		</li>
 		{{end}}
 	</ul>
