@@ -19,7 +19,9 @@ RUN make internal/www/public/styles/index.css
 
 FROM alpine:3.18
 
-COPY --from=builder /build/www /bin/
+WORKDIR /app
+
+COPY --from=builder /build/www .
 COPY --from=assets /build/internal/www/public/ internal/www/public/
 
-ENTRYPOINT ["/bin/www", "start"]
+ENTRYPOINT ["/app/www", "start"]
