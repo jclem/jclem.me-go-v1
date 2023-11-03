@@ -1,0 +1,25 @@
+{{define "writing/layout/show"}}
+<div class="flex flex-col items-start gap-8">
+	<nav class="w-full font-mono">
+		<ul class="flex justify-between">
+            <li>
+                <a href="/writing" class="text-inherit no-underline">← Writing Archive</a>
+            </li>
+
+            <li>
+                <a href="/" class="text-inherit no-underline">
+                    <div class="flex items-center gap-2">
+						<img
+							src="https://www.jclem.me/images/jclem.webp"
+							alt="Photograph of Jonathan Clem"
+							class="rounded-full h-4 w-4" />
+                        <span>Jonathan Clem</span>
+                    </div>
+                </a>
+            </li>
+		</ul>
+	</nav>
+
+	<main class="w-full">{{.}}</main>
+</div>
+{{end}}

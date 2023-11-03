@@ -1,0 +1,14 @@
+{{define "writing/index"}}
+<div class="flex flex-col gap-3">
+	<h1>Writing Archive</h1>
+
+	<ul class="w-full border border-border divide-y divide-border font-mono text-sm">
+		{{range .Posts}}
+		<li class="flex flex-col divide-y divide-dashed divide-border">
+			<a href="/writing/{{.Slug}}" class="p-1">{{.Title}}</a>
+			<datetime datetime="{{.PublishedAt}}" class="p-1" />
+		</li>
+		{{end}}
+	</ul>
+</div>
+{{end}}

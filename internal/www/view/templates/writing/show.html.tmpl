@@ -1,0 +1,23 @@
+{{define "writing/show"}}
+{{with .HasMath}}
+<script>
+    window.MathJax = {
+        svg: {
+            scale: 0.9,
+            minScale: 0.5,
+        }
+    }
+</script>
+
+<script
+    id="MathJax-script"
+    async
+    src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-svg.min.js"
+></script>
+{{end}}
+
+<article>
+<h1>{{.Title}}</h1>
+{{.Content}}
+</article>
+{{end}}
