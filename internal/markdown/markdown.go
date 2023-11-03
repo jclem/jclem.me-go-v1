@@ -16,7 +16,7 @@ import (
 	"go.abhg.dev/goldmark/frontmatter"
 )
 
-var languageNames = map[string]string{
+var languageNames = map[string]string{ //nolint:gochecknoglobals
 	"bash":       "Bash",
 	"curl":       "cURL",
 	"crystal":    "Crystal",
