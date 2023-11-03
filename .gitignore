@@ -1,4 +1,5 @@
 internal/www/public/*
 !internal/www/public/fonts/
+!internal/www/public/images/
 node_modules/
 tmp/
