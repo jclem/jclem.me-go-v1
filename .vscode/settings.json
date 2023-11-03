@@ -3,7 +3,6 @@
         "*.css": "tailwindcss"
     },
     "files.exclude": {
-        "internal/www/public/styles": true,
         "node_modules/": true,
         "tmp/": true
     }

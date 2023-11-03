@@ -14,8 +14,8 @@ FROM node:21.1-alpine3.18 AS assets
 WORKDIR /build
 
 COPY . .
-RUN apk add make
-RUN make internal/www/public/styles/index.css
+RUN apk add make perl-utils
+RUN make assets
 
 FROM alpine:3.18
 

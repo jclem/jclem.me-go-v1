@@ -1,6 +1,8 @@
-internal/www/public/*
+internal/www/public/scripts/*
+internal/www/public/styles/*
 !internal/www/public/fonts/
 !internal/www/public/images/
-!internal/www/public/scripts/
+!internal/www/public/scripts/.keep
+!internal/www/public/styles/.keep
 node_modules/
 tmp/

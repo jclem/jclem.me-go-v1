@@ -9,6 +9,7 @@ import (
 
 	"github.com/jclem/jclem.me/internal/pages"
 	"github.com/jclem/jclem.me/internal/posts"
+	"github.com/jclem/jclem.me/internal/www/public"
 )
 
 //go:embed templates
@@ -88,7 +89,10 @@ func (s *Service) renderRoot(w io.Writer, title, description string, content tem
 }
 
 func New(pages *pages.Service, posts *posts.Service) (*Service, error) {
-	templates, err := template.New("").ParseFS(fs, "templates/*.tmpl")
+	templates, err := template.New("").Funcs(template.FuncMap{
+		"mustGetStyles":  public.MustGetStyles,
+		"mustGetScripts": public.MustGetScripts,
+	}).ParseFS(fs, "templates/*.tmpl")
 	if err != nil {
 		return nil, fmt.Errorf("error parsing templates: %w", err)
 	}
