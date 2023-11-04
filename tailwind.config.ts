@@ -3,7 +3,7 @@ import plugin from 'tailwindcss/plugin'
 import forms from '@tailwindcss/forms'
 
 export default {
-  content: ["internal/pages/*.md", "internal/posts/*.md", "internal/www/view/templates/**/*.tmpl", "internal/markdown/markdown.go"],
+  content: ["internal/pages/*.md", "internal/posts/*.md", "internal/www/view/templates/**/*.tmpl", "internal/markdown/**/*.tmpl"],
   safelist: [
     "code-example",
     "footnote",
