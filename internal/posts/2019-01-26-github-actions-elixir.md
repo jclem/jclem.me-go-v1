@@ -1,7 +1,7 @@
 ---
 title: GitHub Actions for Elixir
 slug: 2019-01-26-github-actions-for-elixir
-published_at: 2019-01-26
+published_at: 2019-01-26T00:00:00-04:00
 published: true
 summary: >-
   In this blog post, Jonathan Clem demonstrates how to use GitHub Actions in an

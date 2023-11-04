@@ -1,7 +1,7 @@
 ---
 title: How I Take Notes
 slug: how-i-take-notes
-published_at: 2020-07-01
+published_at: 2020-07-01T00:00:00-04:00
 published: true
 summary: >-
   In this blog post, Jonathan Clem shares his personal note-taking journey and

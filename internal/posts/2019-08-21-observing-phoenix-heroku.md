@@ -1,7 +1,7 @@
 ---
 title: Observing Phoenix on Heroku
 slug: 2019-08-21-observing-phoenix-on-heroku
-published_at: 2019-08-21
+published_at: 2019-08-21T00:00:00-04:00
 published: true
 summary: >-
   In this blog post, Jonathan Clem demonstrates how recent updates to the Heroku

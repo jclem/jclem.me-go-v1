@@ -1,7 +1,7 @@
 ---
 title: Labeling Public Repo PRs with GitHub Actions
 slug: labeling-prs-on-public-github-repositories
-published_at: 2020-09-22
+published_at: 2020-09-22T00:00:00-04:00
 published: true
 summary: >-
   In this blog post, Jonathan Clem shares a simple method for labeling pull

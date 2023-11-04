@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"embed"
 	"fmt"
-	"html/template"
+	html "html/template"
 	"io"
+	text "text/template"
 
 	"github.com/jclem/jclem.me/internal/pages"
 	"github.com/jclem/jclem.me/internal/posts"
+	"github.com/jclem/jclem.me/internal/www/config"
 	"github.com/jclem/jclem.me/internal/www/public"
 )
 
@@ -16,15 +18,17 @@ import (
 var fs embed.FS
 
 type Service struct {
-	pages     *pages.Service
-	posts     *posts.Service
-	templates *template.Template
+	pages *pages.Service
+	posts *posts.Service
+	html  *html.Template
+	xml   *text.Template
 }
 
 type renderOpts struct {
 	title       string
 	description string
 	layout      string
+	noRoot      bool
 }
 
 type RenderOpt func(*renderOpts)
@@ -47,37 +51,59 @@ func WithLayout(layout string) RenderOpt {
 	}
 }
 
+func WithNoRoot() RenderOpt {
+	return func(opts *renderOpts) {
+		opts.noRoot = true
+	}
+}
+
 type renderedPage struct {
 	Title       string
 	Description string
-	Content     template.HTML
+	Content     html.HTML
 }
 
-func (s *Service) RenderTemplate(w io.Writer, name string, data any, opts ...RenderOpt) error {
+func (s *Service) RenderHTML(w io.Writer, name string, data any, opts ...RenderOpt) error {
 	ropts := &renderOpts{}
 	for _, opt := range opts {
 		opt(ropts)
 	}
 
 	var tbuf bytes.Buffer
-	if err := s.templates.ExecuteTemplate(&tbuf, name, data); err != nil {
+	if err := s.html.ExecuteTemplate(&tbuf, name, data); err != nil {
 		return fmt.Errorf("error executing template: %w", err)
 	}
 
 	if ropts.layout != "" {
 		var lbuf bytes.Buffer
-		if err := s.templates.ExecuteTemplate(&lbuf, ropts.layout, template.HTML(tbuf.String())); err != nil { //nolint:gosec
+		if err := s.html.ExecuteTemplate(&lbuf, ropts.layout, html.HTML(tbuf.String())); err != nil { //nolint:gosec
 			return fmt.Errorf("error executing template: %w", err)
 		}
 
-		return s.renderRoot(w, ropts.title, ropts.description, template.HTML(lbuf.String())) //nolint:gosec
+		return s.renderRoot(w, ropts.title, ropts.description, html.HTML(lbuf.String())) //nolint:gosec
 	}
 
-	return s.renderRoot(w, ropts.title, ropts.description, template.HTML(tbuf.String())) //nolint:gosec
+	if ropts.noRoot {
+		if _, err := w.Write(tbuf.Bytes()); err != nil {
+			return fmt.Errorf("error writing template: %w", err)
+		}
+
+		return nil
+	}
+
+	return s.renderRoot(w, ropts.title, ropts.description, html.HTML(tbuf.String())) //nolint:gosec
 }
 
-func (s *Service) renderRoot(w io.Writer, title, description string, content template.HTML) error {
-	if err := s.templates.ExecuteTemplate(w, "root", renderedPage{
+func (s *Service) RenderXML(w io.Writer, name string, data any) error {
+	if err := s.xml.ExecuteTemplate(w, name, data); err != nil {
+		return fmt.Errorf("error executing template: %w", err)
+	}
+
+	return nil
+}
+
+func (s *Service) renderRoot(w io.Writer, title, description string, content html.HTML) error {
+	if err := s.html.ExecuteTemplate(w, "root", renderedPage{
 		Title:       title,
 		Description: description,
 		Content:     content,
@@ -89,17 +115,18 @@ func (s *Service) renderRoot(w io.Writer, title, description string, content tem
 }
 
 func New(pages *pages.Service, posts *posts.Service) (*Service, error) {
-	templates, err := template.New("").Funcs(template.FuncMap{
+	htmltmpl, err := html.New("").Funcs(html.FuncMap{
 		"mustGetStyles":  public.MustGetStyles,
 		"mustGetScripts": public.MustGetScripts,
-	}).ParseFS(fs, "templates/*.tmpl")
+		"url":            url,
+	}).ParseFS(fs, "templates/*.html.tmpl")
 	if err != nil {
-		return nil, fmt.Errorf("error parsing templates: %w", err)
+		return nil, fmt.Errorf("error parsing html templates: %w", err)
 	}
 
 	subdirs, err := fs.ReadDir("templates")
 	if err != nil {
-		return nil, fmt.Errorf("error reading templates directory: %w", err)
+		return nil, fmt.Errorf("error reading html templates directory: %w", err)
 	}
 
 	for _, subdir := range subdirs {
@@ -107,9 +134,9 @@ func New(pages *pages.Service, posts *posts.Service) (*Service, error) {
 			continue
 		}
 
-		_, err := templates.ParseFS(fs, "templates/"+subdir.Name()+"/*.tmpl")
+		_, err := htmltmpl.ParseFS(fs, "templates/"+subdir.Name()+"/*.tmpl")
 		if err != nil {
-			return nil, fmt.Errorf("error parsing templates: %w", err)
+			return nil, fmt.Errorf("error parsing html templates: %w", err)
 		}
 	}
 
@@ -117,9 +144,26 @@ func New(pages *pages.Service, posts *posts.Service) (*Service, error) {
 		return nil, fmt.Errorf("error parsing templates: %w", err)
 	}
 
+	xmltmpl, err := text.New("").Funcs(text.FuncMap{"url": url}).ParseFS(fs, "templates/*.xml.tmpl")
+	if err != nil {
+		return nil, fmt.Errorf("error parsing xml templates: %w", err)
+	}
+
 	return &Service{
-		pages:     pages,
-		posts:     posts,
-		templates: templates,
+		pages: pages,
+		posts: posts,
+		html:  htmltmpl,
+		xml:   xmltmpl,
 	}, nil
+}
+
+func url(path string) string {
+	proto := "http://"
+	if config.URLUseHTTPS() {
+		proto = "https://"
+	}
+
+	hostname := config.URLHostname()
+
+	return proto + hostname + path
 }

@@ -87,7 +87,7 @@ func (s *Service) Get(slug string) (Post, error) {
 	return Post{}, PostNotFoundError{Slug: slug}
 }
 
-func (s *Service) List(opts ...ListOpt) ([]Post, error) {
+func (s *Service) List(opts ...ListOpt) []Post {
 	var o listOpts
 	for _, opt := range opts {
 		opt(&o)
@@ -107,5 +107,5 @@ func (s *Service) List(opts ...ListOpt) ([]Post, error) {
 		return posts[i].PublishedAt.After(posts[j].PublishedAt)
 	})
 
-	return posts, nil
+	return posts
 }

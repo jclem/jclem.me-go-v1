@@ -1,0 +1,22 @@
+{{define "rss.xml"}}
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+	<channel>
+			<title>jclem.me</title>
+			<link>{{url "/"}}</link>
+			<description>Personal blog of Jonathan Clem</description>
+			<lastBuildDate>{{.BuildDate}}</lastBuildDate>
+			<docs>https://validator.w3.org/feed/docs/rss2.html</docs>
+			<copyright>All rights reserved {{.CopyrightYear}}, Jonathan Clem</copyright>
+			<atom:link href="{{url "/rss.xml"}}" rel="self" type="application/rss+xml"/>
+			{{range .Posts}}
+			<item>
+			<title><![CDATA[{{.Title}}]]></title>
+			<link>{{ printf "/writing/%s" .Slug | url }}</link>
+			<guid>{{ printf "/writing/%s" .Slug | url }}</guid>
+			<pubDate>{{.PublishedAt.Format "Mon, 02 Jan 2006 15:04 MST"}}</pubDate>
+			<description><![CDATA[{{.Summary}}]]></description>
+			</item>
+			{{end}}
+	</channel>
+</rss>
+{{end}}

@@ -1,7 +1,7 @@
 ---
 title: Hey Siri, Deploy My Elixir App
 slug: 2019-01-28-hey-siri-deploy-my-elixir-app
-published_at: 2019-01-28
+published_at: 2019-01-28T00:00:00-04:00
 published: true
 summary: >-
   In this blog post, Jonathan Clem demonstrates how to deploy an Elixir app

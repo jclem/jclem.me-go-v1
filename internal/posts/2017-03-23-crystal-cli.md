@@ -1,7 +1,7 @@
 ---
 title: Building a Command-Line Application in Crystal
 slug: 2017-03-23-building-a-command-line-application-with-crystal
-published_at: 2017-03-23
+published_at: 2017-03-23T00:00:00-04:00
 published: true
 summary: >-
   In this blog post, Jonathan Clem shares his experience building a command-line

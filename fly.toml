@@ -4,6 +4,8 @@ primary_region = "ewr"
 [build]
 
 [env]
+  APP_ENV = "production"
+  HOSTNAME = "jclem-www.fly.dev"
   PORT = "8080"
 
 [http_service]

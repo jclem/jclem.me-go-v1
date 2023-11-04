@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jclem/jclem.me/internal/pages"
 	"github.com/jclem/jclem.me/internal/posts"
+	"github.com/jclem/jclem.me/internal/www/config"
 	"github.com/jclem/jclem.me/internal/www/view"
 )
 
@@ -49,15 +49,12 @@ func (s *Server) Start() error {
 	router.Get("/", s.renderHome())
 	router.Get("/writing", s.listPosts())
 	router.Get("/writing/{slug}", s.showPost())
+	router.Get("/sitemap.xml", s.sitemap())
+	router.Get("/rss.xml", s.rss())
 	router.Handle("/public/*", http.StripPrefix("/public/", http.FileServer(http.Dir("internal/www/public"))))
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
-
 	srv := &http.Server{
-		Addr:              fmt.Sprintf(":%s", port),
+		Addr:              fmt.Sprintf(":%s", config.Port()),
 		Handler:           router,
 		ReadTimeout:       1 * time.Second,
 		ReadHeaderTimeout: 500 * time.Millisecond,
@@ -80,7 +77,7 @@ func (s *Server) renderHome() http.HandlerFunc {
 			return
 		}
 
-		if err := s.view.RenderTemplate(w, "home", struct{ Content template.HTML }{Content: page.Content},
+		if err := s.view.RenderHTML(w, "home", struct{ Content template.HTML }{Content: page.Content},
 			view.WithTitle(page.Title),
 			view.WithDescription(page.Description),
 		); err != nil {
@@ -99,14 +96,9 @@ type listPostsData struct {
 
 func (s *Server) listPosts() http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
-		posts, err := s.posts.List()
-		if err != nil {
-			http.Error(w, fmt.Sprintf("error listing posts: %s", err), http.StatusInternalServerError)
+		posts := s.posts.List()
 
-			return
-		}
-
-		if err := s.view.RenderTemplate(w, "writing/index", listPostsData{Posts: posts},
+		if err := s.view.RenderHTML(w, "writing/index", listPostsData{Posts: posts},
 			view.WithTitle("Writing Archive"),
 			view.WithDescription("A collection of articles and blog posts by Jonathan Clem"),
 			view.WithLayout("writing/layout/index"),
@@ -135,7 +127,7 @@ func (s *Server) showPost() http.HandlerFunc {
 			return
 		}
 
-		if err := s.view.RenderTemplate(w, "writing/show", post,
+		if err := s.view.RenderHTML(w, "writing/show", post,
 			view.WithTitle(post.Title),
 			view.WithDescription(post.Summary),
 			view.WithLayout("writing/layout/show")); err != nil {
@@ -149,5 +141,44 @@ func (s *Server) showPost() http.HandlerFunc {
 func (*Server) healthcheck() http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
+	}
+}
+
+func (s *Server) sitemap() http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		posts := s.posts.List()
+
+		w.Header().Set("Content-Type", "application/xml")
+
+		if err := s.view.RenderXML(w, "sitemap.xml", posts); err != nil {
+			http.Error(w, fmt.Sprintf("error rendering sitemap: %s", err), http.StatusInternalServerError)
+
+			return
+		}
+	}
+}
+
+type rssData struct {
+	BuildDate     string
+	CopyrightYear string
+	Posts         []posts.Post
+}
+
+func (s *Server) rss() http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		posts := s.posts.List()
+		now := time.Now()
+
+		w.Header().Set("Content-Type", "application/xml")
+
+		if err := s.view.RenderXML(w, "rss.xml", rssData{
+			BuildDate:     now.UTC().Format(http.TimeFormat),
+			CopyrightYear: fmt.Sprint(now.Year() - 1),
+			Posts:         posts,
+		}); err != nil {
+			http.Error(w, fmt.Sprintf("error rendering rss: %s", err), http.StatusInternalServerError)
+
+			return
+		}
 	}
 }

@@ -1,7 +1,7 @@
 ---
 title: Building a Pannable, Zoomable Canvas in React
 slug: pan-zoom-canvas-react
-published_at: 2020-10-16
+published_at: 2020-10-16T00:00:00-04:00
 published: true
 has_math: true
 summary: >-

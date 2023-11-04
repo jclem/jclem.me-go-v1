@@ -1,7 +1,7 @@
 ---
 title: On the Utility of Phoenix LiveView
 slug: on-the-utility-of-phoenix-live-view
-published_at: 2019-09-19
+published_at: 2019-09-19T00:00:00-04:00
 published: true
 summary: >-
   In this blog post, Jonathan Clem explores the benefits of using Phoenix
