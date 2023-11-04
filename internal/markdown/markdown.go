@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"embed"
 	"fmt"
+	"html/template"
 	"io/fs"
 
 	"github.com/yuin/goldmark"
@@ -35,6 +36,9 @@ var languageNames = map[string]string{ //nolint:gochecknoglobals
 	"tsx":        "TypeScript JSX",
 	"yaml":       "YAML",
 }
+
+//go:embed templates
+var renderTemplates embed.FS
 
 // A Document represents a Markdown document's content and frontmatter.
 type Document struct {
@@ -79,6 +83,11 @@ func (s *Service) Get(path string) (Document, error) {
 }
 
 func (s *Service) Load() error {
+	tmpl, err := template.ParseFS(renderTemplates, "templates/*.html.tmpl")
+	if err != nil {
+		return fmt.Errorf("error parsing Markdown rendering templates: %w", err)
+	}
+
 	gm := goldmark.New(
 		goldmark.WithExtensions(
 			extension.NewFootnote(),
@@ -89,7 +98,11 @@ func (s *Service) Load() error {
 		goldmark.WithRendererOptions(
 			html.WithUnsafe(),
 			renderer.WithNodeRenderers(
-				util.Prioritized(&codeRenderer{writer: html.DefaultWriter}, 200),
+				util.Prioritized(
+					&codeRenderer{
+						writer:    html.DefaultWriter,
+						templates: tmpl,
+					}, 200),
 			),
 		),
 	)

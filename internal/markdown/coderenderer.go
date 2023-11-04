@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"html/template"
-	"log"
 
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/renderer"
@@ -12,19 +11,9 @@ import (
 	"github.com/yuin/goldmark/util"
 )
 
-var codeblockTemplate *template.Template
-
-func init() {
-	tmpl, err := template.ParseGlob("internal/markdown/codeblock.html.tmpl")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	codeblockTemplate = tmpl
-}
-
 type codeRenderer struct {
-	writer html.Writer
+	writer    html.Writer
+	templates *template.Template
 }
 
 func (r *codeRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
@@ -38,6 +27,8 @@ type WrongNodeError struct {
 func (e WrongNodeError) Error() string {
 	return fmt.Sprintf("node is not a fenced code block: %v", e.Node)
 }
+
+var ErrTemplateNotFound = fmt.Errorf("template not found")
 
 func (r *codeRenderer) render(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
 	n, ok := node.(*ast.FencedCodeBlock)
@@ -64,7 +55,12 @@ func (r *codeRenderer) render(w util.BufWriter, source []byte, node ast.Node, en
 		codebuf.Write(line.Value(source))
 	}
 
-	if err := codeblockTemplate.Execute(w, struct {
+	tmpl := r.templates.Lookup("codeblock.html.tmpl")
+	if tmpl == nil {
+		return ast.WalkStop, ErrTemplateNotFound
+	}
+
+	if err := tmpl.Execute(w, struct {
 		LanguageName string
 		Code         string
 	}{
