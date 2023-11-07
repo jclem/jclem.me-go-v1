@@ -15,7 +15,7 @@ WORKDIR /build
 
 COPY . .
 RUN apk add make perl-utils
-RUN make assets
+RUN make assets.tag
 
 FROM alpine:3.18
 

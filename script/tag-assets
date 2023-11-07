@@ -4,8 +4,10 @@ set -euo pipefail
 
 css=internal/www/public/styles/index.css
 sum=$(cat $css | shasum -a 256 | cut -d' ' -f1)
+rm -f internal/www/public/styles/index.*.css
 mv $css internal/www/public/styles/index.$sum.css
 
 js=internal/www/public/scripts/app.js
 sum=$(cat $js | shasum -a 256 | cut -d' ' -f1)
+rm -f internal/www/public/scripts/app.*.js
 mv $js internal/www/public/scripts/app.$sum.js

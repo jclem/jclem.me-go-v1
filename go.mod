@@ -10,5 +10,6 @@ require (
 
 require (
 	github.com/BurntSushi/toml v1.2.1 // indirect
+	github.com/go-chi/httplog/v2 v2.0.7
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

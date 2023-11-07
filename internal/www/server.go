@@ -4,10 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/httplog/v2"
 	"github.com/jclem/jclem.me/internal/pages"
 	"github.com/jclem/jclem.me/internal/posts"
 	"github.com/jclem/jclem.me/internal/www/config"
@@ -45,6 +47,7 @@ func New() (*Server, error) {
 
 func (s *Server) Start() error {
 	router := chi.NewRouter()
+	router.Use(httplog.RequestLogger(httplog.NewLogger("www")))
 	router.Get("/meta/healthcheck", s.healthcheck())
 	router.Get("/", s.renderHome())
 	router.Get("/writing", s.listPosts())
@@ -60,6 +63,8 @@ func (s *Server) Start() error {
 		ReadHeaderTimeout: 500 * time.Millisecond,
 		WriteTimeout:      5 * time.Second,
 	}
+
+	slog.Info("listening on", slog.String("port", config.Port()))
 
 	if err := srv.ListenAndServe(); err != nil {
 		return fmt.Errorf("error starting server: %w", err)
