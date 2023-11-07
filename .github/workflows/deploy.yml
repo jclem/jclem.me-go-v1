@@ -1,0 +1,22 @@
+name: Deploy
+
+on:
+  push: { branches: [main] }
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy
+    concurrency: production-deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+    environment:
+      name: production
+      url: https://www.jclem.me
+    steps:
+      - uses: actions/checkout@v3
+      - uses: superfly/flyctl-actions/setup-flyctl@ddcac349402ef55840d9870785f4df1890768078
+      - run: flyctl deploy --remote-only --env GIT_SHA=${{ github.sha }}
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
