@@ -1,14 +1,3 @@
-FROM golang:1.21-alpine3.18 AS builder
-
-WORKDIR /build
-
-COPY go.* ./
-RUN go mod download
-
-COPY . .
-RUN apk add make
-RUN make www
-
 FROM node:21.1-alpine3.18 AS assets
 
 WORKDIR /build
@@ -16,6 +5,18 @@ WORKDIR /build
 COPY . .
 RUN apk add make perl-utils
 RUN make assets.tag
+
+FROM golang:1.21-alpine3.18 AS builder
+
+WORKDIR /build
+
+COPY --from=assets /build/internal/www/public/ internal/www/public/
+COPY go.* ./
+RUN go mod download
+
+COPY . .
+RUN apk add make
+RUN make www
 
 FROM alpine:3.18
 
