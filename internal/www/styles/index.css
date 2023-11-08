@@ -4,7 +4,7 @@
 
 @font-face {
   font-family: "Berkeley Mono";
-  src: url("/public/fonts/BerkeleyMono-Regular.woff2") format("woff2");
+  src: url("https://jclem.nyc3.cdn.digitaloceanspaces.com/fonts/BerkeleyMono-Regular.woff2") format("woff2");
 }
 
 @layer base {
