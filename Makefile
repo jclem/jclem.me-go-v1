@@ -13,8 +13,8 @@ bootstrap: assets.build
 check:
 	golangci-lint run
 
-dev: tmp/main
-	./tmp/main
+dev:
+	go build -o ./tmp/main && ./tmp/main
 
 node_modules:
 	npm install
@@ -27,6 +27,3 @@ internal/www/public/scripts/app.js: internal/www/scripts/app.js
 
 internal/www/public/styles/index.css: internal/www/styles/index.css
 	npx tailwindcss -i internal/www/styles/index.css -o internal/www/public/styles/index.css
-
-tmp/main:
-	go build -o ./tmp/main .
