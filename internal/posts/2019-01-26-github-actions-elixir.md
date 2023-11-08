@@ -202,7 +202,7 @@ time a "push" event happens. If I open a pull request, for example, with
 improper code formatting, we will have a helpful notification in the pull
 request:
 
-![A screenshot of GitHub Actions checks showing a failed “mix format” check](https://jclem.nyc3.cdn.digitaloceanspaces.com/2019-01-26-github-actions-for-elixir/checks.png){:.figure}
+![A screenshot of GitHub Actions checks showing a failed “mix format” check](https://jclem.nyc3.cdn.digitaloceanspaces.com/2019-01-26-github-actions-for-elixir/checks.png)
 
 If I click to view details of the failing format check, I'll be able to see the
 output of my action:

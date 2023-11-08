@@ -103,6 +103,10 @@ func (s *Service) Load() error {
 						writer:    html.DefaultWriter,
 						templates: tmpl,
 					}, 200),
+				util.Prioritized(
+					&figureRenderer{
+						writer: html.DefaultWriter,
+					}, 200),
 			),
 		),
 	)

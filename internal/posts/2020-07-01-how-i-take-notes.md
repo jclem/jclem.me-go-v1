@@ -44,7 +44,7 @@ create a new note and begin appending tasks, relevant thoughts, and relevant
 events to the log. Generally if I have a meeting, I won't create a new note for
 it, but will add notes in a nested list:
 
-![A screenshot of a daily note, with meeting notes in a nested list](https://jclem.nyc3.cdn.digitaloceanspaces.com/how-i-take-notes/log.png){: .figure}
+![A screenshot of a daily note, with meeting notes in a nested list](https://jclem.nyc3.cdn.digitaloceanspaces.com/how-i-take-notes/log.png)
 
 There's nothing particularly novel here—I have a log per day and keep a list of
 notes for that day.
@@ -55,7 +55,7 @@ be nested). For each week (beginning on Monday), I use a hashtag such as
 `#log/2020/06/29`, where the final day segment is the start of the week for that
 log's day.
 
-![A screenshot of a daily note with the tag “#log/2020/06/29”](https://jclem.nyc3.cdn.digitaloceanspaces.com/how-i-take-notes/log-tag.png){: .figure}
+![A screenshot of a daily note with the tag “#log/2020/06/29”](https://jclem.nyc3.cdn.digitaloceanspaces.com/how-i-take-notes/log-tag.png)
 
 Although Bear can sort tags by date created or modified, I find it helpful to be
 able to also scope them down to a span of time that I care about.
@@ -93,11 +93,11 @@ a couple of things:
 
 1. I begin referencing them by a tag, such as `#projects/GitHub/X Project#`.
 
-   ![A screenshot showing project reference tags such as “#projects/GitHub/X Project”](https://jclem.nyc3.cdn.digitaloceanspaces.com/how-i-take-notes/project-tags.png){:.figure}
+   ![A screenshot showing project reference tags such as “#projects/GitHub/X Project”](https://jclem.nyc3.cdn.digitaloceanspaces.com/how-i-take-notes/project-tags.png)
 
 1. I create a new home page for that project with basic information.
 
-   ![A screenshot showing a home page for the “#projects/GitHub/X Project” tag](https://jclem.nyc3.cdn.digitaloceanspaces.com/how-i-take-notes/project-page.png){:.figure}
+   ![A screenshot showing a home page for the “#projects/GitHub/X Project” tag](https://jclem.nyc3.cdn.digitaloceanspaces.com/how-i-take-notes/project-page.png)
 
 Now, I have a tag which lets me reference that project in any note (and gives me
 the ability to find any note where I referenced that project). Additionally, it
@@ -122,9 +122,9 @@ others. It really improves the quality of those reviews when I can easily refer
 back to conversations we had and projects we worked on together without having
 to rely entirely on memory.
 
-![A screenshot showing use of a person tag: “#people/GitHub/Ada Coleman”](https://jclem.nyc3.cdn.digitaloceanspaces.com/how-i-take-notes/person-tags.png){:.figure}
+![A screenshot showing use of a person tag: “#people/GitHub/Ada Coleman”](https://jclem.nyc3.cdn.digitaloceanspaces.com/how-i-take-notes/person-tags.png)
 
-![A screenshot showing a tag home page: “#people/GitHub/Ada Coleman”](https://jclem.nyc3.cdn.digitaloceanspaces.com/how-i-take-notes/person-page.png){:.figure}
+![A screenshot showing a tag home page: “#people/GitHub/Ada Coleman”](https://jclem.nyc3.cdn.digitaloceanspaces.com/how-i-take-notes/person-page.png)
 
 Bear has excellent tag autocompletion, so to refer to this person in my notes,
 just typing `#Ad[TAB]` is sufficient.

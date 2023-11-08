@@ -21,11 +21,12 @@ func (r *codeRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
 }
 
 type WrongNodeError struct {
-	Node ast.Node
+	Expected string
+	Node     ast.Node
 }
 
 func (e WrongNodeError) Error() string {
-	return fmt.Sprintf("node is not a fenced code block: %v", e.Node)
+	return fmt.Sprintf("node is not %s: %v", e.Expected, e.Node)
 }
 
 var ErrTemplateNotFound = fmt.Errorf("template not found")
@@ -33,7 +34,7 @@ var ErrTemplateNotFound = fmt.Errorf("template not found")
 func (r *codeRenderer) render(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
 	n, ok := node.(*ast.FencedCodeBlock)
 	if !ok {
-		return ast.WalkStop, &WrongNodeError{Node: node}
+		return ast.WalkStop, &WrongNodeError{Expected: "fenced code block", Node: node}
 	}
 
 	if !entering {
