@@ -1,6 +1,6 @@
-// Package missives represents short posts with one or two sentences of content
-// or attached media.
-package missives
+// Package dispatches represents short posts with one or two sentences of
+// content or attached media.
+package dispatches
 
 import (
 	"context"
@@ -46,7 +46,7 @@ type imageData struct {
 	Content string `json:"content"`
 }
 
-type Missive struct {
+type Dispatch struct {
 	ID         int64             `json:"id"`
 	Type       string            `json:"type"`
 	Data       map[string]string `json:"data"`
@@ -54,27 +54,27 @@ type Missive struct {
 	UpdatedAt  time.Time         `json:"updated_at"`
 }
 
-func (s *Service) ListMissives(ctx context.Context) ([]Missive, error) {
+func (s *Service) ListDispatches(ctx context.Context) ([]Dispatch, error) {
 	rows, err := s.conn.Query(ctx, `SELECT id, type, data, inserted_at, updated_at FROM missives ORDER BY inserted_at DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("could not query missives: %w", err)
 	}
 
-	var missives []Missive
+	var dispatches []Dispatch
 
 	for rows.Next() {
-		var missive Missive
-		if err := rows.Scan(&missive.ID, &missive.Type, &missive.Data, &missive.InsertedAt, &missive.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("could not scan missive: %w", err)
+		var dispatch Dispatch
+		if err := rows.Scan(&dispatch.ID, &dispatch.Type, &dispatch.Data, &dispatch.InsertedAt, &dispatch.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("could not scan Dispatch: %w", err)
 		}
 
-		missives = append(missives, missive)
+		dispatches = append(dispatches, dispatch)
 	}
 
-	return missives, nil
+	return dispatches, nil
 }
 
-func (s *Service) CreateMissive(ctx context.Context, content string, alt string, name string, r io.ReadSeeker) (*Missive, error) {
+func (s *Service) CreateDispatch(ctx context.Context, content string, alt string, name string, r io.ReadSeeker) (*Dispatch, error) {
 	url, err := s.putObject(name, r)
 	if err != nil {
 		return nil, err
@@ -93,12 +93,12 @@ func (s *Service) CreateMissive(ctx context.Context, content string, alt string,
 
 	row := s.conn.QueryRow(ctx, `INSERT INTO missives (type, data) VALUES ($1, $2) RETURNING id, type, data, inserted_at, updated_at`, "image", b)
 
-	var missive Missive
-	if err := row.Scan(&missive.ID, &missive.Type, &missive.Data, &missive.InsertedAt, &missive.UpdatedAt); err != nil {
-		return nil, fmt.Errorf("could not scan missive: %w", err)
+	var dispatch Dispatch
+	if err := row.Scan(&dispatch.ID, &dispatch.Type, &dispatch.Data, &dispatch.InsertedAt, &dispatch.UpdatedAt); err != nil {
+		return nil, fmt.Errorf("could not scan Dispatch: %w", err)
 	}
 
-	return &missive, nil
+	return &dispatch, nil
 }
 
 func (s *Service) putObject(name string, r io.ReadSeeker) (string, error) {

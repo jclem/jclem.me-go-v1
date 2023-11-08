@@ -16,7 +16,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/httplog/v2"
-	"github.com/jclem/jclem.me/internal/missives"
+	"github.com/jclem/jclem.me/internal/dispatches"
 	"github.com/jclem/jclem.me/internal/pages"
 	"github.com/jclem/jclem.me/internal/posts"
 	"github.com/jclem/jclem.me/internal/www/config"
@@ -32,7 +32,7 @@ type Server struct {
 	pages *pages.Service
 	posts *posts.Service
 	view  *view.Service
-	miss  *missives.Service
+	miss  *dispatches.Service
 }
 
 func New() (*Server, error) {
@@ -51,9 +51,9 @@ func New() (*Server, error) {
 		return nil, fmt.Errorf("error creating view service: %w", err)
 	}
 
-	missSvc, err := missives.New()
+	missSvc, err := dispatches.New()
 	if err != nil {
-		return nil, fmt.Errorf("error creating missives service: %w", err)
+		return nil, fmt.Errorf("error creating dispatches service: %w", err)
 	}
 
 	gm := goldmark.New(
@@ -84,10 +84,10 @@ func (s *Server) Start() error {
 	router.Get("/", s.renderHome())
 	router.Get("/writing", s.listPosts())
 	router.Get("/writing/{slug}", s.showPost())
-	router.Get("/missives", s.listMissives())
+	router.Get("/dispatches", s.listDispatches())
 	router.Get("/sitemap.xml", s.sitemap())
 	router.Get("/rss.xml", s.rss())
-	router.Route("/api/missives", s.missivesRouter())
+	router.Route("/api/dispatches", s.dispatchesRouter())
 	router.Handle("/public/*", http.StripPrefix("/public/", http.FileServer(http.Dir("internal/www/public"))))
 
 	srv := &http.Server{
@@ -177,42 +177,42 @@ func (s *Server) showPost() http.HandlerFunc {
 	}
 }
 
-func (s *Server) listMissives() http.HandlerFunc {
+func (s *Server) listDispatches() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		missives, err := s.miss.ListMissives(r.Context())
+		dispatches, err := s.miss.ListDispatches(r.Context())
 		if err != nil {
-			returnError(w, err, "error listing missives")
+			returnError(w, err, "error listing dispatches")
 
 			return
 		}
 
-		type missiveItem struct {
+		type dispatchItem struct {
 			URL        string
 			Alt        string
 			Content    template.HTML
 			InsertedAt time.Time
 		}
 
-		missiveItems := make([]missiveItem, 0, len(missives))
+		dispItems := make([]dispatchItem, 0, len(dispatches))
 
-		for _, missive := range missives {
+		for _, disp := range dispatches {
 			var buf bytes.Buffer
-			if err := s.md.Convert([]byte(missive.Data["content"]), &buf); err != nil {
+			if err := s.md.Convert([]byte(disp.Data["content"]), &buf); err != nil {
 				returnError(w, err, "error converting markdown")
 			}
 
-			missiveItems = append(missiveItems, missiveItem{
-				URL:        missive.Data["url"],
-				Alt:        missive.Data["alt"],
+			dispItems = append(dispItems, dispatchItem{
+				URL:        disp.Data["url"],
+				Alt:        disp.Data["alt"],
 				Content:    template.HTML(buf.String()), //nolint:gosec
-				InsertedAt: missive.InsertedAt,
+				InsertedAt: disp.InsertedAt,
 			})
 		}
 
-		if err := s.view.RenderHTML(w, "missives/index", missiveItems,
-			view.WithTitle("Missives Archive"),
-			view.WithDescription("A collection of missives by Jonathan Clem"),
-			view.WithLayout("missives/layout/index"),
+		if err := s.view.RenderHTML(w, "dispatches/index", dispItems,
+			view.WithTitle("Dispatches"),
+			view.WithDescription("A collection of dispatches by Jonathan Clem"),
+			view.WithLayout("dispatches/layout/index"),
 		); err != nil {
 			returnError(w, err, "error rendering page")
 
@@ -266,17 +266,17 @@ func (s *Server) rss() http.HandlerFunc {
 	}
 }
 
-func (s *Server) missivesRouter() func(r chi.Router) {
+func (s *Server) dispatchesRouter() func(r chi.Router) {
 	return func(r chi.Router) {
 		r.Group(func(r chi.Router) {
 			r.Use(ensureAuthorized)
-			r.Post("/", s.apiCreateMissive())
-			r.Get("/", s.apiListMissives())
+			r.Post("/", s.apiCreateDispatch())
+			r.Get("/", s.apiListDispatches())
 		})
 	}
 }
 
-func (s *Server) apiCreateMissive() http.HandlerFunc {
+func (s *Server) apiCreateDispatch() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		err := r.ParseMultipartForm(8 << 20) // 8 MB
 		if err != nil {
@@ -309,45 +309,45 @@ func (s *Server) apiCreateMissive() http.HandlerFunc {
 		filename := time.Now().UTC().Format("20060102T150405Z") + strings.ToLower(ext)
 
 		// Upload the image file to S3
-		missive, err := s.miss.CreateMissive(r.Context(), contentField, altField, filename, file)
+		disp, err := s.miss.CreateDispatch(r.Context(), contentField, altField, filename, file)
 		if err != nil {
-			returnError(w, err, "error creating missive")
+			returnError(w, err, "error creating dispatch")
 
 			return
 		}
 
-		missiveJSON, err := json.Marshal(missive)
+		dispJSON, err := json.Marshal(disp)
 		if err != nil {
-			returnError(w, err, "error marshaling missive")
+			returnError(w, err, "error marshaling dispatch")
 
 			return
 		}
 
 		w.WriteHeader(http.StatusCreated)
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(missiveJSON)
+		_, _ = w.Write(dispJSON)
 	}
 }
 
-func (s *Server) apiListMissives() http.HandlerFunc {
+func (s *Server) apiListDispatches() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		missives, err := s.miss.ListMissives(r.Context())
+		dispatches, err := s.miss.ListDispatches(r.Context())
 		if err != nil {
-			returnError(w, err, "error listing missives")
+			returnError(w, err, "error listing dispatches")
 
 			return
 		}
 
-		missivesJSON, err := json.Marshal(missives)
+		dispJSON, err := json.Marshal(dispatches)
 		if err != nil {
-			returnError(w, err, "error marshaling missives")
+			returnError(w, err, "error marshaling dispatches")
 
 			return
 		}
 
 		w.WriteHeader(http.StatusOK)
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(missivesJSON)
+		_, _ = w.Write(dispJSON)
 	}
 }
 
