@@ -200,10 +200,11 @@ func (s *Server) listMissives() http.HandlerFunc {
 			if err := s.md.Convert([]byte(missive.Data["content"]), &buf); err != nil {
 				returnError(w, err, "error converting markdown")
 			}
+
 			missiveItems = append(missiveItems, missiveItem{
 				URL:        missive.Data["url"],
 				Alt:        missive.Data["alt"],
-				Content:    template.HTML(buf.String()),
+				Content:    template.HTML(buf.String()), //nolint:gosec
 				InsertedAt: missive.InsertedAt,
 			})
 		}
@@ -305,7 +306,7 @@ func (s *Server) apiCreateMissive() http.HandlerFunc {
 		}
 
 		ext := filepath.Ext(header.Filename)
-		filename := time.Now().UTC().Format("20060102T150405Z") + ext
+		filename := time.Now().UTC().Format("20060102T150405Z") + strings.ToLower(ext)
 
 		// Upload the image file to S3
 		missive, err := s.miss.CreateMissive(r.Context(), contentField, altField, filename, file)

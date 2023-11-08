@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -137,7 +138,7 @@ func (s *Service) putObject(name string, r io.ReadSeeker) (string, error) {
 }
 
 func getContentType(ext string) string {
-	switch ext {
+	switch strings.ToLower(ext) {
 	case ".png":
 		return "image/png"
 	case ".jpg", ".jpeg":
