@@ -1,25 +1,38 @@
 package www
 
 import (
+	"bytes"
+	"crypto/subtle"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
 	"log/slog"
 	"net/http"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/httplog/v2"
+	"github.com/jclem/jclem.me/internal/missives"
 	"github.com/jclem/jclem.me/internal/pages"
 	"github.com/jclem/jclem.me/internal/posts"
 	"github.com/jclem/jclem.me/internal/www/config"
 	"github.com/jclem/jclem.me/internal/www/view"
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/extension"
+	"github.com/yuin/goldmark/renderer/html"
+	"go.abhg.dev/goldmark/frontmatter"
 )
 
 type Server struct {
+	md    goldmark.Markdown
 	pages *pages.Service
 	posts *posts.Service
 	view  *view.Service
+	miss  *missives.Service
 }
 
 func New() (*Server, error) {
@@ -38,10 +51,29 @@ func New() (*Server, error) {
 		return nil, fmt.Errorf("error creating view service: %w", err)
 	}
 
+	missSvc, err := missives.New()
+	if err != nil {
+		return nil, fmt.Errorf("error creating missives service: %w", err)
+	}
+
+	gm := goldmark.New(
+		goldmark.WithExtensions(
+			extension.NewFootnote(),
+			extension.NewTypographer(),
+			extension.NewLinkify(),
+			&frontmatter.Extender{},
+		),
+		goldmark.WithRendererOptions(
+			html.WithUnsafe(),
+		),
+	)
+
 	return &Server{
 		pages: pagesSvc,
 		posts: postsSvc,
 		view:  viewSvc,
+		miss:  missSvc,
+		md:    gm,
 	}, nil
 }
 
@@ -52,8 +84,10 @@ func (s *Server) Start() error {
 	router.Get("/", s.renderHome())
 	router.Get("/writing", s.listPosts())
 	router.Get("/writing/{slug}", s.showPost())
+	router.Get("/missives", s.listMissives())
 	router.Get("/sitemap.xml", s.sitemap())
 	router.Get("/rss.xml", s.rss())
+	router.Route("/api/missives", s.missivesRouter())
 	router.Handle("/public/*", http.StripPrefix("/public/", http.FileServer(http.Dir("internal/www/public"))))
 
 	srv := &http.Server{
@@ -77,7 +111,7 @@ func (s *Server) renderHome() http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		page, err := s.pages.Get("about")
 		if err != nil {
-			http.Error(w, fmt.Sprintf("error getting page: %s", err), http.StatusInternalServerError)
+			returnError(w, err, "error getting page")
 
 			return
 		}
@@ -86,7 +120,7 @@ func (s *Server) renderHome() http.HandlerFunc {
 			view.WithTitle(page.Title),
 			view.WithDescription(page.Description),
 		); err != nil {
-			http.Error(w, fmt.Sprintf("error rendering page: %s", err), http.StatusInternalServerError)
+			returnError(w, err, "error rendering page")
 
 			return
 		}
@@ -108,7 +142,7 @@ func (s *Server) listPosts() http.HandlerFunc {
 			view.WithDescription("A collection of articles and blog posts by Jonathan Clem"),
 			view.WithLayout("writing/layout/index"),
 		); err != nil {
-			http.Error(w, fmt.Sprintf("error rendering page: %s", err), http.StatusInternalServerError)
+			returnError(w, err, "error rendering page")
 
 			return
 		}
@@ -122,12 +156,12 @@ func (s *Server) showPost() http.HandlerFunc {
 		post, err := s.posts.Get(slug)
 		if err != nil {
 			if errors.As(err, &posts.PostNotFoundError{}) {
-				http.Error(w, fmt.Sprintf("error getting post: %s", err), http.StatusNotFound)
+				returnCodeError(w, http.StatusNotFound, fmt.Sprintf("post not found: %s", slug))
 
 				return
 			}
 
-			http.Error(w, fmt.Sprintf("error getting post: %s", err), http.StatusInternalServerError)
+			returnError(w, err, "error getting post")
 
 			return
 		}
@@ -136,7 +170,50 @@ func (s *Server) showPost() http.HandlerFunc {
 			view.WithTitle(post.Title),
 			view.WithDescription(post.Summary),
 			view.WithLayout("writing/layout/show")); err != nil {
-			http.Error(w, fmt.Sprintf("error rendering page: %s", err), http.StatusInternalServerError)
+			returnError(w, err, "error rendering page")
+
+			return
+		}
+	}
+}
+
+func (s *Server) listMissives() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		missives, err := s.miss.ListMissives(r.Context())
+		if err != nil {
+			returnError(w, err, "error listing missives")
+
+			return
+		}
+
+		type missiveItem struct {
+			URL        string
+			Alt        string
+			Content    template.HTML
+			InsertedAt time.Time
+		}
+
+		missiveItems := make([]missiveItem, 0, len(missives))
+
+		for _, missive := range missives {
+			var buf bytes.Buffer
+			if err := s.md.Convert([]byte(missive.Data["content"]), &buf); err != nil {
+				returnError(w, err, "error converting markdown")
+			}
+			missiveItems = append(missiveItems, missiveItem{
+				URL:        missive.Data["url"],
+				Alt:        missive.Data["alt"],
+				Content:    template.HTML(buf.String()),
+				InsertedAt: missive.InsertedAt,
+			})
+		}
+
+		if err := s.view.RenderHTML(w, "missives/index", missiveItems,
+			view.WithTitle("Missives Archive"),
+			view.WithDescription("A collection of missives by Jonathan Clem"),
+			view.WithLayout("missives/layout/index"),
+		); err != nil {
+			returnError(w, err, "error rendering page")
 
 			return
 		}
@@ -156,7 +233,7 @@ func (s *Server) sitemap() http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/xml")
 
 		if err := s.view.RenderXML(w, "sitemap.xml", posts); err != nil {
-			http.Error(w, fmt.Sprintf("error rendering sitemap: %s", err), http.StatusInternalServerError)
+			returnError(w, err, "error rendering sitemap")
 
 			return
 		}
@@ -178,12 +255,140 @@ func (s *Server) rss() http.HandlerFunc {
 
 		if err := s.view.RenderXML(w, "rss.xml", rssData{
 			BuildDate:     now.UTC().Format(http.TimeFormat),
-			CopyrightYear: fmt.Sprint(now.Year() - 1),
+			CopyrightYear: strconv.Itoa(now.Year() - 1),
 			Posts:         posts,
 		}); err != nil {
-			http.Error(w, fmt.Sprintf("error rendering rss: %s", err), http.StatusInternalServerError)
+			returnError(w, err, "error rendering rss")
 
 			return
 		}
 	}
+}
+
+func (s *Server) missivesRouter() func(r chi.Router) {
+	return func(r chi.Router) {
+		r.Group(func(r chi.Router) {
+			r.Use(ensureAuthorized)
+			r.Post("/", s.apiCreateMissive())
+			r.Get("/", s.apiListMissives())
+		})
+	}
+}
+
+func (s *Server) apiCreateMissive() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		err := r.ParseMultipartForm(8 << 20) // 8 MB
+		if err != nil {
+			returnCodeError(w, http.StatusBadRequest, fmt.Sprintf("error parsing form: %s", err))
+
+			return
+		}
+
+		// Get the image file from the form
+		file, header, err := r.FormFile("image")
+		if err != nil {
+			returnCodeError(w, http.StatusBadRequest, fmt.Sprintf("error getting image file: %s", err))
+
+			return
+		}
+		defer file.Close()
+
+		// Get the additional fields from the form
+		typeField := r.FormValue("type")
+		altField := r.FormValue("alt")
+		contentField := r.FormValue("content")
+
+		if typeField != "image" {
+			returnCodeError(w, http.StatusBadRequest, fmt.Sprintf("invalid type: %s", typeField))
+
+			return
+		}
+
+		ext := filepath.Ext(header.Filename)
+		filename := time.Now().UTC().Format("20060102T150405Z") + ext
+
+		// Upload the image file to S3
+		missive, err := s.miss.CreateMissive(r.Context(), contentField, altField, filename, file)
+		if err != nil {
+			returnError(w, err, "error creating missive")
+
+			return
+		}
+
+		missiveJSON, err := json.Marshal(missive)
+		if err != nil {
+			returnError(w, err, "error marshaling missive")
+
+			return
+		}
+
+		w.WriteHeader(http.StatusCreated)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(missiveJSON)
+	}
+}
+
+func (s *Server) apiListMissives() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		missives, err := s.miss.ListMissives(r.Context())
+		if err != nil {
+			returnError(w, err, "error listing missives")
+
+			return
+		}
+
+		missivesJSON, err := json.Marshal(missives)
+		if err != nil {
+			returnError(w, err, "error marshaling missives")
+
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(missivesJSON)
+	}
+}
+
+type apiError struct {
+	Code    int    `json:"code"`
+	Reason  string `json:"reason"`
+	Message string `json:"message"`
+}
+
+func ensureAuthorized(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHeader := r.Header.Get("Authorization")
+		token := strings.TrimPrefix(authHeader, "Bearer ")
+
+		if subtle.ConstantTimeCompare([]byte(token), []byte(config.APIKey())) != 1 {
+			returnCodeError(w, http.StatusUnauthorized, "invalid or missing API key")
+
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+func returnCodeError(w http.ResponseWriter, code int, message string) {
+	w.WriteHeader(code)
+	w.Header().Set("Content-Type", "application/json")
+
+	_ = json.NewEncoder(w).Encode(apiError{ //nolint:errchkjson
+		Code:    code,
+		Reason:  http.StatusText(code),
+		Message: message,
+	})
+}
+
+func returnError(w http.ResponseWriter, err error, message string) {
+	w.WriteHeader(http.StatusInternalServerError)
+	w.Header().Set("Content-Type", "application/json")
+
+	_ = json.NewEncoder(w).Encode(apiError{ //nolint:errchkjson
+		Code:    http.StatusInternalServerError,
+		Reason:  http.StatusText(http.StatusInternalServerError),
+		Message: fmt.Errorf("%s: %w", message, err).Error(),
+	})
 }

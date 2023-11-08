@@ -4,3 +4,4 @@ internal/www/public/styles/*
 !internal/www/public/styles/.keep
 node_modules/
 tmp/
+.env
