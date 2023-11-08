@@ -55,9 +55,9 @@ type Dispatch struct {
 }
 
 func (s *Service) ListDispatches(ctx context.Context) ([]Dispatch, error) {
-	rows, err := s.conn.Query(ctx, `SELECT id, type, data, inserted_at, updated_at FROM missives ORDER BY inserted_at DESC`)
+	rows, err := s.conn.Query(ctx, `SELECT id, type, data, inserted_at, updated_at FROM dispatches ORDER BY inserted_at DESC`)
 	if err != nil {
-		return nil, fmt.Errorf("could not query missives: %w", err)
+		return nil, fmt.Errorf("could not query dispatches: %w", err)
 	}
 
 	var dispatches []Dispatch
@@ -91,7 +91,7 @@ func (s *Service) CreateDispatch(ctx context.Context, content string, alt string
 		return nil, fmt.Errorf("could not marshal data: %w", err)
 	}
 
-	row := s.conn.QueryRow(ctx, `INSERT INTO missives (type, data) VALUES ($1, $2) RETURNING id, type, data, inserted_at, updated_at`, "image", b)
+	row := s.conn.QueryRow(ctx, `INSERT INTO dispatches (type, data) VALUES ($1, $2) RETURNING id, type, data, inserted_at, updated_at`, "image", b)
 
 	var dispatch Dispatch
 	if err := row.Scan(&dispatch.ID, &dispatch.Type, &dispatch.Data, &dispatch.InsertedAt, &dispatch.UpdatedAt); err != nil {
@@ -122,7 +122,7 @@ func (s *Service) putObject(name string, r io.ReadSeeker) (string, error) {
 
 	obj := s3.PutObjectInput{
 		Bucket:      aws.String(cfg.Bucket),
-		Key:         aws.String("missives/" + name),
+		Key:         aws.String("dispatches/" + name),
 		Body:        r,
 		ACL:         aws.String("public-read"),
 		ContentType: aws.String(getContentType(filepath.Ext(name))),
@@ -132,7 +132,7 @@ func (s *Service) putObject(name string, r io.ReadSeeker) (string, error) {
 		return "", fmt.Errorf("could not put object: %w", err)
 	}
 
-	url := "https://" + cfg.Bucket + "." + region + ".cdn.digitaloceanspaces.com/missives/" + name
+	url := "https://" + cfg.Bucket + "." + region + ".cdn.digitaloceanspaces.com/dispatches/" + name
 
 	return url, nil
 }
