@@ -118,12 +118,19 @@ func (s *Service) putObject(name string, r io.ReadSeeker) (string, error) {
 
 	s3client := s3.New(s3ssn)
 
+	contentType := getContentType(filepath.Ext(name))
+
+	var contentTypeParam *string
+	if contentType != "" {
+		contentTypeParam = aws.String(contentType)
+	}
+
 	obj := s3.PutObjectInput{
 		Bucket:      aws.String(cfg.Bucket),
 		Key:         aws.String("dispatches/" + name),
 		Body:        r,
 		ACL:         aws.String("public-read"),
-		ContentType: aws.String(getContentType(filepath.Ext(name))),
+		ContentType: contentTypeParam,
 	}
 
 	if _, err := s3client.PutObject(&obj); err != nil {
