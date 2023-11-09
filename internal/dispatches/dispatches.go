@@ -25,6 +25,7 @@ type Service struct {
 
 func (s *Service) Stop() error {
 	s.db.Close()
+
 	return nil
 }
 
