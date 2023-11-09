@@ -15,29 +15,26 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jclem/jclem.me/internal/www/config"
 )
 
 type Service struct {
-	conn *pgx.Conn
+	db *pgxpool.Pool
 }
 
 func (s *Service) Stop() error {
-	if err := s.conn.Close(context.Background()); err != nil {
-		return fmt.Errorf("could not close database connection: %w", err)
-	}
-
+	s.db.Close()
 	return nil
 }
 
 func New() (*Service, error) {
-	conn, err := pgx.Connect(context.Background(), config.DatabaseURL())
+	pool, err := pgxpool.New(context.Background(), config.DatabaseURL())
 	if err != nil {
 		return nil, fmt.Errorf("could not connect to database: %w", err)
 	}
 
-	return &Service{conn: conn}, nil
+	return &Service{db: pool}, nil
 }
 
 type imageData struct {
@@ -55,7 +52,7 @@ type Dispatch struct {
 }
 
 func (s *Service) ListDispatches(ctx context.Context) ([]Dispatch, error) {
-	rows, err := s.conn.Query(ctx, `SELECT id, type, data, inserted_at, updated_at FROM dispatches ORDER BY inserted_at DESC`)
+	rows, err := s.db.Query(ctx, `SELECT id, type, data, inserted_at, updated_at FROM dispatches ORDER BY inserted_at DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("could not query dispatches: %w", err)
 	}
@@ -91,7 +88,7 @@ func (s *Service) CreateDispatch(ctx context.Context, content string, alt string
 		return nil, fmt.Errorf("could not marshal data: %w", err)
 	}
 
-	row := s.conn.QueryRow(ctx, `INSERT INTO dispatches (type, data) VALUES ($1, $2) RETURNING id, type, data, inserted_at, updated_at`, "image", b)
+	row := s.db.QueryRow(ctx, `INSERT INTO dispatches (type, data) VALUES ($1, $2) RETURNING id, type, data, inserted_at, updated_at`, "image", b)
 
 	var dispatch Dispatch
 	if err := row.Scan(&dispatch.ID, &dispatch.Type, &dispatch.Data, &dispatch.InsertedAt, &dispatch.UpdatedAt); err != nil {
