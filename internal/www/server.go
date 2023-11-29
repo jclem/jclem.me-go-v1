@@ -1,22 +1,17 @@
 package www
 
 import (
-	"bytes"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
 	"log/slog"
 	"net/http"
-	"path/filepath"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/httplog/v2"
-	"github.com/jclem/jclem.me/internal/dispatches"
 	"github.com/jclem/jclem.me/internal/pages"
 	"github.com/jclem/jclem.me/internal/posts"
 	"github.com/jclem/jclem.me/internal/www/config"
@@ -32,7 +27,6 @@ type Server struct {
 	pages *pages.Service
 	posts *posts.Service
 	view  *view.Service
-	miss  *dispatches.Service
 }
 
 func New() (*Server, error) {
@@ -51,11 +45,6 @@ func New() (*Server, error) {
 		return nil, fmt.Errorf("error creating view service: %w", err)
 	}
 
-	missSvc, err := dispatches.New()
-	if err != nil {
-		return nil, fmt.Errorf("error creating dispatches service: %w", err)
-	}
-
 	gm := goldmark.New(
 		goldmark.WithExtensions(
 			extension.NewFootnote(),
@@ -72,7 +61,6 @@ func New() (*Server, error) {
 		pages: pagesSvc,
 		posts: postsSvc,
 		view:  viewSvc,
-		miss:  missSvc,
 		md:    gm,
 	}, nil
 }
@@ -84,10 +72,8 @@ func (s *Server) Start() error {
 	router.Get("/", s.renderHome())
 	router.Get("/writing", s.listPosts())
 	router.Get("/writing/{slug}", s.showPost())
-	router.Get("/dispatches", s.listDispatches())
 	router.Get("/sitemap.xml", s.sitemap())
 	router.Get("/rss.xml", s.rss())
-	router.Route("/api/dispatches", s.dispatchesRouter())
 	router.Handle("/public/*", http.StripPrefix("/public/", http.FileServer(http.Dir("internal/www/public"))))
 
 	srv := &http.Server{
@@ -177,50 +163,6 @@ func (s *Server) showPost() http.HandlerFunc {
 	}
 }
 
-func (s *Server) listDispatches() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		dispatches, err := s.miss.ListDispatches(r.Context())
-		if err != nil {
-			returnError(w, err, "error listing dispatches")
-
-			return
-		}
-
-		type dispatchItem struct {
-			URL        string
-			Alt        string
-			Content    template.HTML
-			InsertedAt time.Time
-		}
-
-		dispItems := make([]dispatchItem, 0, len(dispatches))
-
-		for _, disp := range dispatches {
-			var buf bytes.Buffer
-			if err := s.md.Convert([]byte(disp.Data["content"]), &buf); err != nil {
-				returnError(w, err, "error converting markdown")
-			}
-
-			dispItems = append(dispItems, dispatchItem{
-				URL:        disp.Data["url"],
-				Alt:        disp.Data["alt"],
-				Content:    template.HTML(buf.String()), //nolint:gosec
-				InsertedAt: disp.InsertedAt,
-			})
-		}
-
-		if err := s.view.RenderHTML(w, "dispatches/index", dispItems,
-			view.WithTitle("Dispatches"),
-			view.WithDescription("A collection of dispatches by Jonathan Clem"),
-			view.WithLayout("dispatches/layout/index"),
-		); err != nil {
-			returnError(w, err, "error rendering page")
-
-			return
-		}
-	}
-}
-
 func (*Server) healthcheck() http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -266,110 +208,10 @@ func (s *Server) rss() http.HandlerFunc {
 	}
 }
 
-func (s *Server) dispatchesRouter() func(r chi.Router) {
-	return func(r chi.Router) {
-		r.Group(func(r chi.Router) {
-			r.Use(ensureAuthorized)
-			r.Post("/", s.apiCreateDispatch())
-			r.Get("/", s.apiListDispatches())
-		})
-	}
-}
-
-func (s *Server) apiCreateDispatch() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		err := r.ParseMultipartForm(8 << 20) // 8 MB
-		if err != nil {
-			returnCodeError(w, http.StatusBadRequest, fmt.Sprintf("error parsing form: %s", err))
-
-			return
-		}
-
-		// Get the image file from the form
-		file, header, err := r.FormFile("image")
-		if err != nil {
-			returnCodeError(w, http.StatusBadRequest, fmt.Sprintf("error getting image file: %s", err))
-
-			return
-		}
-		defer file.Close()
-
-		// Get the additional fields from the form
-		typeField := r.FormValue("type")
-		altField := r.FormValue("alt")
-		contentField := r.FormValue("content")
-
-		if typeField != "image" {
-			returnCodeError(w, http.StatusBadRequest, fmt.Sprintf("invalid type: %s", typeField))
-
-			return
-		}
-
-		ext := filepath.Ext(header.Filename)
-		filename := time.Now().UTC().Format("20060102T150405Z") + strings.ToLower(ext)
-
-		// Upload the image file to S3
-		disp, err := s.miss.CreateDispatch(r.Context(), contentField, altField, filename, file)
-		if err != nil {
-			returnError(w, err, "error creating dispatch")
-
-			return
-		}
-
-		dispJSON, err := json.Marshal(disp)
-		if err != nil {
-			returnError(w, err, "error marshaling dispatch")
-
-			return
-		}
-
-		w.WriteHeader(http.StatusCreated)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(dispJSON)
-	}
-}
-
-func (s *Server) apiListDispatches() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		dispatches, err := s.miss.ListDispatches(r.Context())
-		if err != nil {
-			returnError(w, err, "error listing dispatches")
-
-			return
-		}
-
-		dispJSON, err := json.Marshal(dispatches)
-		if err != nil {
-			returnError(w, err, "error marshaling dispatches")
-
-			return
-		}
-
-		w.WriteHeader(http.StatusOK)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(dispJSON)
-	}
-}
-
 type apiError struct {
 	Code    int    `json:"code"`
 	Reason  string `json:"reason"`
 	Message string `json:"message"`
-}
-
-func ensureAuthorized(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authHeader := r.Header.Get("Authorization")
-		token := strings.TrimPrefix(authHeader, "Bearer ")
-
-		if subtle.ConstantTimeCompare([]byte(token), []byte(config.APIKey())) != 1 {
-			returnCodeError(w, http.StatusUnauthorized, "invalid or missing API key")
-
-			return
-		}
-
-		next.ServeHTTP(w, r)
-	})
 }
 
 func returnCodeError(w http.ResponseWriter, code int, message string) {
