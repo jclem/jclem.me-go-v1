@@ -90,7 +90,7 @@ type Image struct {
 	Context Context `json:"@context"`
 	Type    string  `json:"type"`
 	Name    string  `json:"name"`
-	HRef    string  `json:"href"`
+	URL     string  `json:"url"`
 }
 
 // An OrderedCollection is an ActivityStreams OrderedCollection.
@@ -171,7 +171,7 @@ func GetUser(username string) (Actor, error) {
 			Context: Context{ActivityStreamsContext},
 			Type:    "Image",
 			Name:    "Photograph of Jonathan Clem",
-			HRef:    "https://jclem.nyc3.cdn.digitaloceanspaces.com/profile/profile-1024.webp",
+			URL:     "https://jclem.nyc3.cdn.digitaloceanspaces.com/profile/profile-1024.webp",
 		},
 		PublicKey: PublicKey{
 			ID:           fmt.Sprintf("https://%s/~%s#main-key", Domain, username),
