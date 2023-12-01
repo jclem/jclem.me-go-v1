@@ -39,18 +39,6 @@ func (w *HandleFollowWorker) Work(ctx context.Context, job *river.Job[HandleFoll
 		return fmt.Errorf("failed to get activity: %w", err)
 	}
 
-	if err := w.createFollower(ctx, activity); err != nil {
-		return err
-	}
-
-	return w.acceptFollower(ctx, activity)
-}
-
-func (w *HandleFollowWorker) createFollower(ctx context.Context, activity ActivityRecord) error {
-	if activity.Type != "Follow" {
-		return fmt.Errorf("activity is not a follow")
-	}
-
 	var data map[string]any
 	if err := json.Unmarshal(activity.Data, &data); err != nil {
 		return fmt.Errorf("failed to unmarshal activity data: %w", err)
@@ -74,6 +62,18 @@ func (w *HandleFollowWorker) createFollower(ctx context.Context, activity Activi
 		return fmt.Errorf("unexpected actor type: %T", t)
 	}
 
+	if err := w.createFollower(ctx, activity, actorID); err != nil {
+		return err
+	}
+
+	return w.acceptFollower(ctx, activity, actorID)
+}
+
+func (w *HandleFollowWorker) createFollower(ctx context.Context, activity ActivityRecord, actorID string) error {
+	if activity.Type != "Follow" {
+		return fmt.Errorf("activity is not a follow")
+	}
+
 	follower, err := w.pub.CreateFollower(ctx, actorID, activity.ID)
 	if err != nil {
 		return fmt.Errorf("failed to create follower: %w", err)
@@ -91,13 +91,8 @@ type acceptActivity struct {
 	Object  string `json:"object"`
 }
 
-func (w *HandleFollowWorker) acceptFollower(ctx context.Context, activity ActivityRecord) error {
+func (w *HandleFollowWorker) acceptFollower(ctx context.Context, activity ActivityRecord, actorID string) error {
 	me := GetMe()
-
-	var object map[string]any
-	if err := json.Unmarshal(activity.Data, &object); err != nil {
-		return fmt.Errorf("failed to unmarshal activity data: %w", err)
-	}
 
 	// Post an accept to the actor.
 	accept := acceptActivity{
@@ -112,25 +107,7 @@ func (w *HandleFollowWorker) acceptFollower(ctx context.Context, activity Activi
 		return fmt.Errorf("failed to marshal accept: %w", err)
 	}
 
-	var actorID string
-
-	actor := object["actor"]
-
-	switch t := actor.(type) {
-	case string:
-		actorID = t
-	case map[string]any:
-		id, ok := t["id"].(string)
-		if !ok {
-			return fmt.Errorf("failed to get actor ID")
-		}
-
-		actorID = id
-	default:
-		return fmt.Errorf("unexpected actor type: %T", t)
-	}
-
-	// TODO: Resolve the actual actor inbox.
+	// TODO: Resolve the actual actor inbox?
 	inboxURL := actorID + "/inbox"
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, inboxURL, bytes.NewReader(j))

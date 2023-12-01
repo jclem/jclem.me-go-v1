@@ -148,7 +148,6 @@ func listFollowing(_ *Server) http.HandlerFunc {
 
 			return
 		}
-
 	})
 }
 
