@@ -96,7 +96,7 @@ func (w *HandleFollowWorker) acceptFollower(ctx context.Context, activity Activi
 
 	// Post an accept to the actor.
 	accept := acceptActivity{
-		Context: Context,
+		Context: ActivityStreamsContext,
 		Type:    "Accept",
 		Actor:   me.ID,
 		Object:  activity.ID,
@@ -147,7 +147,7 @@ func newHandleFollowWorker(pub *Service) *HandleFollowWorker {
 	}
 }
 
-func signJSONLDRequest(u Person, r *http.Request, b []byte) error {
+func signJSONLDRequest(u Actor, r *http.Request, b []byte) error {
 	prefs := []httpsig.Algorithm{httpsig.RSA_SHA256}
 	digestAlgo := httpsig.DigestSha256
 	headers := []string{httpsig.RequestTarget, "date", "digest"}

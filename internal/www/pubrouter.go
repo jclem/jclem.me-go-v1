@@ -54,30 +54,7 @@ func getUser(w http.ResponseWriter, r *http.Request) {
 
 func getNote(_ *Server) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		username := chi.URLParam(r, "username")
-
-		user, err := ap.GetUser(username)
-		if err != nil {
-			returnCodeError(w, http.StatusNotFound, fmt.Sprintf("user not found: %q", username))
-
-			return
-		}
-
 		id := chi.URLParam(r, "id")
-		nid := fmt.Sprintf("https://%s/~%s/notes/%s", ap.Domain, username, id)
-
-		for _, note := range ap.GetNotes(user) {
-			if note.Object.ID == nid {
-				if err := json.NewEncoder(w).Encode(note); err != nil {
-					returnError(w, err, "error encoding note")
-
-					return
-				}
-
-				return
-			}
-		}
-
 		returnCodeError(w, http.StatusNotFound, fmt.Sprintf("note not found: %q", id))
 	})
 }
@@ -92,7 +69,7 @@ func getOutbox(_ *Server) http.HandlerFunc {
 			return
 		}
 
-		collection := ap.NewCollection(user.Outbox, ap.GetNotes(user))
+		collection := ap.NewCollection(user.Outbox, []ap.Activity[ap.Note]{})
 		if err := json.NewEncoder(w).Encode(collection); err != nil {
 			returnError(w, err, "error encoding actor")
 
