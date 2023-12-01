@@ -104,7 +104,7 @@ func (w *HandleFollowWorker) acceptFollower(ctx context.Context, activity Activi
 		Context: Context,
 		Type:    "Accept",
 		Actor:   me.ID,
-		Object:  job.Args.ActivityID,
+		Object:  activity.ID,
 	}
 
 	j, err := json.Marshal(accept)
