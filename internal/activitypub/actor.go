@@ -8,6 +8,7 @@ import (
 )
 
 const Context = "https://www.w3.org/ns/activitystreams"
+const Domain = "pub.jclem.me"
 
 type Person struct {
 	Context           string    `json:"@context"`
@@ -166,12 +167,12 @@ func GetUser(username string) (Person, error) {
 	return Person{
 		Context:           Context,
 		Type:              "Person",
-		ID:                fmt.Sprintf("https://pub.jclem.me/~%s", username),
-		Inbox:             fmt.Sprintf("https://pub.jclem.me/~%s/inbox", username),
-		Outbox:            fmt.Sprintf("https://pub.jclem.me/~%s/outbox", username),
-		Followers:         fmt.Sprintf("https://pub.jclem.me/~%s/followers", username),
-		Following:         fmt.Sprintf("https://pub.jclem.me/~%s/following", username),
-		Liked:             fmt.Sprintf("https://pub.jclem.me/~%s/liked", username),
+		ID:                fmt.Sprintf("https://%s/~%s", Domain, username),
+		Inbox:             fmt.Sprintf("https://%s/~%s/inbox", Domain, username),
+		Outbox:            fmt.Sprintf("https://%s/~%s/outbox", Domain, username),
+		Followers:         fmt.Sprintf("https://%s/~%s/followers", Domain, username),
+		Following:         fmt.Sprintf("https://%s/~%s/following", Domain, username),
+		Liked:             fmt.Sprintf("https://%s/~%s/liked", Domain, username),
 		PreferredUsername: username,
 		Name:              "Jonathan Clem",
 		Summary:           "A person that enjoys helping build things on the internet",
@@ -182,19 +183,19 @@ func GetUser(username string) (Person, error) {
 			URL:     "https://jclem.nyc3.cdn.digitaloceanspaces.com/profile/profile-1024.webp",
 		},
 		PublicKey: PublicKey{
-			ID:           fmt.Sprintf("https://pub.jclem.me/~%s#main-key", username),
-			Owner:        fmt.Sprintf("https://pub.jclem.me/~%s", username),
+			ID:           fmt.Sprintf("https://%s/~%s#main-key", Domain, username),
+			Owner:        fmt.Sprintf("https://%s/~%s", Domain, username),
 			PublicKeyPem: pubkey,
 		},
 	}, nil
 }
 
 func (a Person) NoteID(id int) string {
-	return fmt.Sprintf("https://pub.jclem.me/~%s/notes/%d", a.PreferredUsername, id)
+	return fmt.Sprintf("https://%s/~%s/notes/%d", Domain, a.PreferredUsername, id)
 }
 
 func (a Person) OutboxPage(page int) string {
-	return fmt.Sprintf("https://pub.jclem.me/~%s/outbox/%d", a.PreferredUsername, page)
+	return fmt.Sprintf("https://%s/~%s/outbox/%d", Domain, a.PreferredUsername, page)
 }
 
 func NewCollection[T any](id string, items []T) OrderedCollection[T] {

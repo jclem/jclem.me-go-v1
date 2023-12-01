@@ -64,7 +64,7 @@ func getNote(_ *Server) http.HandlerFunc {
 		}
 
 		id := chi.URLParam(r, "id")
-		nid := fmt.Sprintf("https://pub.jclem.me/~%s/notes/%s", username, id)
+		nid := fmt.Sprintf("https://%s/~%s/notes/%s", ap.Domain, username, id)
 
 		for _, note := range ap.GetNotes(user) {
 			if note.Object.ID == nid {
@@ -214,7 +214,7 @@ func webfinger() http.HandlerFunc {
 			return
 		}
 
-		if parts2[1] != "pub.jclem.me" {
+		if parts2[1] != ap.Domain {
 			returnCodeError(w, http.StatusNotFound, "user not found")
 
 			return

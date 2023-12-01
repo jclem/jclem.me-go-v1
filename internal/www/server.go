@@ -34,6 +34,8 @@ type Server struct {
 	pub   *ap.Service
 }
 
+const domain = "www.jclem.me"
+
 func New() (*Server, error) {
 	pagesSvc := pages.New()
 	if err := pagesSvc.Start(); err != nil {
@@ -88,8 +90,8 @@ func (s *Server) Start() error {
 
 	if config.IsProd() {
 		hr := hostrouter.New()
-		hr.Map("pub.jclem.me", pubRouter(s))
-		hr.Map("www.jclem.me", s.webrouter())
+		hr.Map(ap.Domain, pubRouter(s))
+		hr.Map(domain, s.webrouter())
 		r.Mount("/", hr)
 	} else {
 		r.Mount("/pub", pubRouter(s))
