@@ -7,8 +7,8 @@ linters:
 #     - funlen
 #     - gci
 #     - gochecknoglobals
-#     - goerr113
-#     - gofumpt
+    - goerr113 # This disallows returning one-off errors. Annoying.
+    - gofumpt
     - gomnd
     - lll
 #     - nlreturn
@@ -28,6 +28,7 @@ linters:
     - scopelint
     - structcheck
     - varcheck
+    - nonamedreturns
 
 # issues:
 #   exclude-use-default: false

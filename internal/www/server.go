@@ -1,6 +1,7 @@
 package www
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,7 +12,10 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/hostrouter"
 	"github.com/go-chi/httplog/v2"
+	ap "github.com/jclem/jclem.me/internal/activitypub"
 	"github.com/jclem/jclem.me/internal/pages"
 	"github.com/jclem/jclem.me/internal/posts"
 	"github.com/jclem/jclem.me/internal/www/config"
@@ -27,7 +31,10 @@ type Server struct {
 	pages *pages.Service
 	posts *posts.Service
 	view  *view.Service
+	pub   *ap.Service
 }
+
+const domain = "www.jclem.me"
 
 func New() (*Server, error) {
 	pagesSvc := pages.New()
@@ -57,28 +64,43 @@ func New() (*Server, error) {
 		),
 	)
 
+	pub, err := ap.NewService(context.Background(), config.DatabaseURL())
+	if err != nil {
+		return nil, fmt.Errorf("error creating activitypub service: %w", err)
+	}
+
 	return &Server{
 		pages: pagesSvc,
 		posts: postsSvc,
 		view:  viewSvc,
 		md:    gm,
+		pub:   pub,
 	}, nil
 }
 
 func (s *Server) Start() error {
-	router := chi.NewRouter()
-	router.Use(httplog.RequestLogger(httplog.NewLogger("www")))
-	router.Get("/meta/healthcheck", s.healthcheck())
-	router.Get("/", s.renderHome())
-	router.Get("/writing", s.listPosts())
-	router.Get("/writing/{slug}", s.showPost())
-	router.Get("/sitemap.xml", s.sitemap())
-	router.Get("/rss.xml", s.rss())
-	router.Handle("/public/*", http.StripPrefix("/public/", http.FileServer(http.Dir("internal/www/public"))))
+	middleware.RequestIDHeader = "fly-request-id"
+
+	r := chi.NewRouter()
+	r.Use(middleware.RequestID)
+	r.Use(middleware.RealIP)
+	r.Use(middleware.Recoverer)
+
+	r.Get("/meta/healthcheck", s.healthcheck())
+
+	if config.IsProd() {
+		hr := hostrouter.New()
+		hr.Map(ap.Domain, pubRouter(s))
+		hr.Map(domain, s.webrouter())
+		r.Mount("/", hr)
+	} else {
+		r.Mount("/pub", pubRouter(s))
+		r.Mount("/", s.webrouter())
+	}
 
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%s", config.Port()),
-		Handler:           router,
+		Handler:           r,
 		ReadTimeout:       1 * time.Second,
 		ReadHeaderTimeout: 500 * time.Millisecond,
 		WriteTimeout:      5 * time.Second,
@@ -91,6 +113,19 @@ func (s *Server) Start() error {
 	}
 
 	return nil
+}
+
+func (s *Server) webrouter() chi.Router { //nolint:ireturn
+	r := chi.NewRouter()
+	r.Use(httplog.RequestLogger(httplog.NewLogger("www")))
+	r.Get("/", s.renderHome())
+	r.Get("/writing", s.listPosts())
+	r.Get("/writing/{slug}", s.showPost())
+	r.Get("/sitemap.xml", s.sitemap())
+	r.Get("/rss.xml", s.rss())
+	r.Handle("/public/*", http.StripPrefix("/public/", http.FileServer(http.Dir("internal/www/public"))))
+
+	return r
 }
 
 func (s *Server) renderHome() http.HandlerFunc {
