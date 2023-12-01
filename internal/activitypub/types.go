@@ -14,6 +14,9 @@ const ActivityStreamsContext = "https://www.w3.org/ns/activitystreams"
 // SecurityContext is the security context (for public keys on actors).
 const SecurityContext = "https://w3id.org/security/v1"
 
+// ContentType is the content type for ActivityPub requests and responses.
+const ContentType = "application/activity+json; charset=utf-8"
+
 // Domain is the domain of the server.
 const Domain = "pub.jclem.me"
 

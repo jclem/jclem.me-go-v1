@@ -107,8 +107,15 @@ func (w *HandleFollowWorker) acceptFollower(ctx context.Context, activity Activi
 		return fmt.Errorf("failed to marshal accept: %w", err)
 	}
 
-	// TODO: Resolve the actual actor inbox?
-	inboxURL := actorID + "/inbox"
+	actor, err := GetActor(ctx, actorID)
+	if err != nil {
+		return fmt.Errorf("error getting actor: %w", err)
+	}
+
+	inboxURL := actor.Inbox
+	if inboxURL == "" {
+		return errors.New("actor has no inbox")
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, inboxURL, bytes.NewReader(j))
 	if err != nil {
