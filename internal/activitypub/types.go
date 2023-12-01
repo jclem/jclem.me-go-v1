@@ -191,17 +191,3 @@ func NewCollection[T any](id string, items []T) OrderedCollection[T] {
 		OrderedItems: items,
 	}
 }
-
-// A WebfingerLink is a link returned by a Webfinger request.
-type WebfingerLink struct {
-	Rel  string `json:"rel"`
-	Type string `json:"type"`
-	Href string `json:"href"`
-}
-
-// A WebfingerResponse is a response to a Webfinger request.
-type WebfingerResponse struct {
-	Subject string          `json:"subject"`
-	Aliases []string        `json:"aliases"`
-	Links   []WebfingerLink `json:"links"`
-}

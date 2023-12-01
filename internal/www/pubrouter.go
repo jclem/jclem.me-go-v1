@@ -10,13 +10,14 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/httplog/v2"
 	ap "github.com/jclem/jclem.me/internal/activitypub"
+	"github.com/jclem/jclem.me/internal/webfinger"
 )
 
 func pubRouter(s *Server) chi.Router { //nolint:ireturn
 	r := chi.NewRouter()
 	r.Use(httplog.RequestLogger(httplog.NewLogger("pub")))
 	r.Use(setActivityJSONContentType)
-	r.Get("/.well-known/webfinger", webfinger())
+	r.Get("/.well-known/webfinger", handleWebfinger())
 	r.Mount("/~{username}", userRouter(s))
 
 	return r
@@ -167,7 +168,7 @@ func createActivity(s *Server) http.HandlerFunc {
 	})
 }
 
-func webfinger() http.HandlerFunc {
+func handleWebfinger() http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		resource := r.URL.Query().Get("resource")
 		if resource == "" {
@@ -204,10 +205,10 @@ func webfinger() http.HandlerFunc {
 			return
 		}
 
-		if err := json.NewEncoder(w).Encode(ap.WebfingerResponse{
+		if err := json.NewEncoder(w).Encode(webfinger.JRD{
 			Subject: resource,
 			Aliases: []string{user.ID},
-			Links: []ap.WebfingerLink{
+			Links: []webfinger.Link{
 				{
 					Rel:  "self",
 					Type: "application/activity+json",
