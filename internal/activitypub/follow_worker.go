@@ -109,6 +109,8 @@ func (w *HandleFollowWorker) acceptFollower(ctx context.Context, activity Activi
 
 	actor, err := GetActor(ctx, actorID)
 	if err != nil {
+		slog.ErrorContext(ctx, "error getting actor", "error", err)
+
 		return fmt.Errorf("error getting actor: %w", err)
 	}
 

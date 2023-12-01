@@ -14,12 +14,6 @@ const ActivityStreamsContext = "https://www.w3.org/ns/activitystreams"
 // SecurityContext is the security context (for public keys on actors).
 const SecurityContext = "https://w3id.org/security/v1"
 
-// ContentType is the content type for ActivityPub requests and responses.
-const ContentType = "application/activity+json; charset=utf-8"
-
-// Domain is the domain of the server.
-const Domain = "pub.jclem.me"
-
 // A Context is a JSON-LD context.
 //
 // Although there is a normative object definition for context at
@@ -41,7 +35,9 @@ func (c *Context) UnmarshalJSON(data []byte) error {
 
 	var contexts []string
 	if err := json.Unmarshal(data, &contexts); err != nil {
-		return fmt.Errorf("failed to unmarshal context: %w", err)
+		// HACK: If we can't unmarshal as a string or array of strings, this is
+		// a context object, and we just ignore those now.
+		return nil //nolint:nilerr
 	}
 
 	*c = Context(contexts)
