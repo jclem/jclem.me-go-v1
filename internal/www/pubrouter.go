@@ -85,6 +85,7 @@ func (p *pubRouter) createActivity(w http.ResponseWriter, r *http.Request) {
 
 	note.Context = []string{ap.ActivityStreamsContext}
 	note.ID = fmt.Sprintf("%s/notes/%s", me.ID, uuid.New())
+	note.AttributedTo = me.ID
 	note.Type = "Note"
 	note.Published = time.Now().UTC().Format(http.TimeFormat)
 	note.To = []string{ap.ActivityStreamsContext + "#Public"}
