@@ -11,11 +11,10 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
-	"strings"
 	"time"
 
 	"github.com/go-fed/httpsig"
+	"github.com/jclem/jclem.me/internal/www/config"
 	"github.com/riverqueue/river"
 )
 
@@ -166,10 +165,7 @@ func signJSONLDRequest(u Actor, r *http.Request, b []byte) error {
 		return fmt.Errorf("error creating signer: %w", err)
 	}
 
-	privateKeyPEM := strings.ReplaceAll(os.Getenv("AP_PRIVATE_KEY_PEM"), `\n`, "\n")
-	if privateKeyPEM == "" {
-		return errors.New("AP_PRIVATE_KEY_PEM is required")
-	}
+	privateKeyPEM := config.PrivateKeyPEM()
 
 	block, _ := pem.Decode([]byte(privateKeyPEM))
 	if block == nil {

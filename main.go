@@ -9,12 +9,11 @@ import (
 )
 
 func main() {
-	cfg, err := config.LoadConfig()
-	if err != nil {
+	if _, err := config.LoadConfig(); err != nil {
 		log.Fatal(fmt.Errorf("error loading config: %w", err))
 	}
 
-	server, err := www.New(cfg)
+	server, err := www.New()
 	if err != nil {
 		log.Fatal(fmt.Errorf("error creating server: %w", err))
 	}

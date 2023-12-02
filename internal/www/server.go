@@ -23,13 +23,13 @@ type Server struct {
 
 const domain = "www.jclem.me"
 
-func New(cfg config.Config) (*Server, error) {
-	webRouter, err := newWebRouter(cfg.URLUseHTTPS(), cfg.URLHostname())
+func New() (*Server, error) {
+	webRouter, err := newWebRouter()
 	if err != nil {
 		return nil, fmt.Errorf("error creating web router: %w", err)
 	}
 
-	pubRouter, err := newPubRouter(cfg.DatabaseURL, cfg.APIKey)
+	pubRouter, err := newPubRouter()
 	if err != nil {
 		return nil, fmt.Errorf("error creating pub router: %w", err)
 	}
@@ -37,14 +37,14 @@ func New(cfg config.Config) (*Server, error) {
 	middleware.RequestIDHeader = "fly-request-id"
 
 	r := chi.NewRouter()
-	s := &Server{Mux: r, port: cfg.Port}
-	r.Use(httplog.RequestLogger(newLogger("server", cfg.IsProd())))
+	s := &Server{Mux: r, port: config.Port()}
+	r.Use(httplog.RequestLogger(newLogger("server", config.IsProd())))
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
 	r.Get("/meta/healthcheck", s.healthcheck)
 
-	if cfg.IsProd() {
+	if config.IsProd() {
 		hr := hostrouter.New()
 		hr.Map(ap.Domain, pubRouter)
 		hr.Map(domain, webRouter)

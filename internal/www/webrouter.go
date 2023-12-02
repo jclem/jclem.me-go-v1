@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jclem/jclem.me/internal/pages"
 	"github.com/jclem/jclem.me/internal/posts"
+	"github.com/jclem/jclem.me/internal/www/config"
 	"github.com/jclem/jclem.me/internal/www/view"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/extension"
@@ -26,7 +27,7 @@ type webRouter struct {
 	view  *view.Service
 }
 
-func newWebRouter(useHTTPS bool, hostname string) (*webRouter, error) {
+func newWebRouter() (*webRouter, error) {
 	pages := pages.New()
 	if err := pages.Start(); err != nil {
 		return nil, fmt.Errorf("error starting pages service: %w", err)
@@ -37,7 +38,7 @@ func newWebRouter(useHTTPS bool, hostname string) (*webRouter, error) {
 		return nil, fmt.Errorf("error starting posts service: %w", err)
 	}
 
-	view, err := view.New(pages, posts, useHTTPS, hostname)
+	view, err := view.New(pages, posts, config.URLUseHTTPS(), config.URLHostname())
 	if err != nil {
 		return nil, fmt.Errorf("error creating view service: %w", err)
 	}

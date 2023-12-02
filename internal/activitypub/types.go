@@ -2,11 +2,10 @@ package activitypub
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
-	"os"
 	"slices"
-	"strings"
+
+	"github.com/jclem/jclem.me/internal/www/config"
 )
 
 // ActivityStreamsContext is the ActivityStreams context.
@@ -14,6 +13,14 @@ const ActivityStreamsContext = "https://www.w3.org/ns/activitystreams"
 
 // SecurityContext is the security context (for public keys on actors).
 const SecurityContext = "https://w3id.org/security/v1"
+
+// MastodonContext is the Mastodon context.
+var MastodonContext = map[string]string{ //nolint:gochecknoglobals
+	"toot":         "http://joinmastodon.org/ns#",
+	"discoverable": "toot:discoverable",
+	"Hashtag":      "as:Hashtag",
+	"sensitive":    "as:sensitive",
+}
 
 // A Context is a JSON-LD context.
 //
@@ -152,6 +159,7 @@ type Note struct {
 	AttributedTo string   `json:"attributedTo"`
 	Content      string   `json:"content"`
 	Published    string   `json:"published"`
+	Sensitive    bool     `json:"sensitive"`
 	To           []string `json:"to"`
 	Cc           []string `json:"cc"`
 }
@@ -174,10 +182,7 @@ func GetUser(username string) (Actor, error) {
 		return Actor{}, fmt.Errorf("user %s not found", username)
 	}
 
-	pubkey := strings.ReplaceAll(os.Getenv("AP_PUBLIC_KEY_PEM"), `\n`, "\n")
-	if pubkey == "" {
-		return Actor{}, errors.New("AP_PUBLIC_KEY_PEM not set")
-	}
+	pubkey := config.PublicKeyPEM()
 
 	return Actor{
 		Context:           NewContext(ActivityStreamsContext, SecurityContext),
@@ -207,7 +212,10 @@ func GetUser(username string) (Actor, error) {
 // NewCollection creates a new OrderedCollection containing the given items.
 func NewCollection[T any](id string, items []T) OrderedCollection[T] {
 	return OrderedCollection[T]{
-		Context:      NewContext(ActivityStreamsContext),
+		Context: NewContext(
+			ActivityStreamsContext,
+			MastodonContext,
+		),
 		Type:         "OrderedCollection",
 		ID:           id,
 		TotalItems:   len(items),

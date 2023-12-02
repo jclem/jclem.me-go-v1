@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -16,26 +17,42 @@ const (
 )
 
 type Config struct {
-	Port           string `mapstructure:"port"`
-	AppEnv         AppEnv `mapstructure:"app_env"`
-	DatabaseURL    string `mapstructure:"database_url"`
-	APIKey         string `mapstructure:"api_key"`
-	SpacesSecret   string `mapstructure:"do_spaces_secret"`
-	SpacesKeyID    string `mapstructure:"do_spaces_key_id"`
-	SpacesEndpoint string `mapstructure:"do_spaces_endpoint"`
-	SpacesBucket   string `mapstructure:"do_spaces_bucket"`
+	Port             string `mapstructure:"port"`
+	AppEnv           AppEnv `mapstructure:"app_env"`
+	DatabaseURL      string `mapstructure:"database_url"`
+	APIKey           string `mapstructure:"api_key"`
+	SpacesSecret     string `mapstructure:"do_spaces_secret"`
+	SpacesKeyID      string `mapstructure:"do_spaces_key_id"`
+	SpacesEndpoint   string `mapstructure:"do_spaces_endpoint"`
+	SpacesBucket     string `mapstructure:"do_spaces_bucket"`
+	PublicKeyPEMRaw  string `mapstructure:"ap_public_key_pem"`
+	PrivateKeyPEMRaw string `mapstructure:"ap_private_key_pem"`
 }
+
+var GlobalConfig Config //nolint:gochecknoglobals
 
 func (c Config) IsDev() bool {
 	return c.AppEnv == Development
+}
+
+func IsDev() bool {
+	return GlobalConfig.IsDev()
 }
 
 func (c Config) IsProd() bool {
 	return c.AppEnv == Production
 }
 
+func IsProd() bool {
+	return GlobalConfig.IsProd()
+}
+
 func (c Config) URLUseHTTPS() bool {
 	return c.IsProd()
+}
+
+func URLUseHTTPS() bool {
+	return GlobalConfig.URLUseHTTPS()
 }
 
 func (c Config) URLPort() string {
@@ -46,12 +63,56 @@ func (c Config) URLPort() string {
 	return c.Port
 }
 
+func URLPort() string {
+	return GlobalConfig.URLPort()
+}
+
+func (c Config) PublicKeyPEM() string {
+	if c.PublicKeyPEMRaw == "" {
+		panic("public key PEM not set")
+	}
+
+	return strings.ReplaceAll(c.PublicKeyPEMRaw, `\n`, "\n")
+}
+
+func PublicKeyPEM() string {
+	return GlobalConfig.PublicKeyPEM()
+}
+
+func (c Config) PrivateKeyPEM() string {
+	if c.PrivateKeyPEMRaw == "" {
+		panic("private key PEM not set")
+	}
+
+	return strings.ReplaceAll(c.PrivateKeyPEMRaw, `\n`, "\n")
+}
+
+func PrivateKeyPEM() string {
+	return GlobalConfig.PrivateKeyPEM()
+}
+
 func (c Config) URLHostname() string {
 	if c.IsProd() {
 		return os.Getenv("HOSTNAME")
 	}
 
 	return "localhost:" + c.URLPort()
+}
+
+func URLHostname() string {
+	return GlobalConfig.URLHostname()
+}
+
+func APIKey() string {
+	return GlobalConfig.APIKey
+}
+
+func DatabaseURL() string {
+	return GlobalConfig.DatabaseURL
+}
+
+func Port() string {
+	return GlobalConfig.Port
 }
 
 // LoadConfig loads the configuration from flags and configuration files into
@@ -77,10 +138,9 @@ func LoadConfig() (Config, error) {
 		}
 	}
 
-	var cfg Config
-	if err := viper.Unmarshal(&cfg); err != nil {
+	if err := viper.Unmarshal(&GlobalConfig); err != nil {
 		return Config{}, fmt.Errorf("could not unmarshal config: %w", err)
 	}
 
-	return cfg, nil
+	return GlobalConfig, nil
 }

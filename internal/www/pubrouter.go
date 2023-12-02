@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	ap "github.com/jclem/jclem.me/internal/activitypub"
 	"github.com/jclem/jclem.me/internal/webfinger"
+	"github.com/jclem/jclem.me/internal/www/config"
 )
 
 type activityInput struct {
@@ -23,18 +24,17 @@ type activityInput struct {
 
 type pubRouter struct {
 	*chi.Mux
-	pub    *ap.Service
-	apiKey string
+	pub *ap.Service
 }
 
-func newPubRouter(databaseURL string, apiKey string) (*pubRouter, error) {
-	pub, err := ap.NewService(context.Background(), databaseURL)
+func newPubRouter() (*pubRouter, error) {
+	pub, err := ap.NewService(context.Background(), config.DatabaseURL())
 	if err != nil {
 		return nil, fmt.Errorf("error creating activitypub service: %w", err)
 	}
 
 	r := chi.NewRouter()
-	p := &pubRouter{Mux: r, pub: pub, apiKey: apiKey}
+	p := &pubRouter{Mux: r, pub: pub}
 	r.Use(p.setContentType)
 	r.Get("/.well-known/webfinger", p.handleWebfinger)
 	r.Mount("/~{username}", p.userRouter())
@@ -82,7 +82,7 @@ func (p *pubRouter) createActivity(w http.ResponseWriter, r *http.Request) {
 
 	me := ap.GetMe()
 
-	note.Context = ap.NewContext(ap.ActivityStreamsContext)
+	note.Context = ap.NewContext(ap.ActivityStreamsContext, ap.MastodonContext)
 	note.ID = fmt.Sprintf("%s/notes/%s", me.ID, uuid.New())
 	note.AttributedTo = me.ID
 	note.Type = "Note"
@@ -352,7 +352,7 @@ func (p *pubRouter) verifyBearerToken(next http.Handler) http.Handler {
 			return
 		}
 
-		if token := parts[1]; token != p.apiKey {
+		if token := parts[1]; token != config.APIKey() {
 			returnCodeError(r.Context(), w, http.StatusUnauthorized, "invalid authorization header")
 
 			return
