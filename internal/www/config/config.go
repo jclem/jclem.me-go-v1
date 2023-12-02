@@ -68,6 +68,7 @@ func LoadConfig() (Config, error) {
 
 	viper.AddConfigPath(".")
 	viper.SetConfigName("config")
+	viper.AutomaticEnv()
 
 	if err := viper.ReadInConfig(); err != nil {
 		var cerr viper.ConfigFileNotFoundError
