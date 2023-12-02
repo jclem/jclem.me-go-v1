@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"regexp"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
 	ap "github.com/jclem/jclem.me/internal/activitypub"
@@ -49,7 +48,7 @@ func (p *pubRouter) userRouter() chi.Router { //nolint:ireturn
 	rr.Get("/outbox", p.getOutbox)
 	rr.Get("/followers", p.listFollowers)
 	rr.Get("/following", p.listFollowing)
-	rr.Post("/inbox", p.acceptActivity)
+	rr.Post("/inbox", p.createActivity)
 
 	rr.Group(func(rr chi.Router) {
 		rr.Use(p.verifyBearerToken)
@@ -60,33 +59,6 @@ func (p *pubRouter) userRouter() chi.Router { //nolint:ireturn
 }
 
 func (p *pubRouter) createActivity(w http.ResponseWriter, r *http.Request) {
-	auth := r.Header.Get("Authorization")
-	if auth == "" {
-		returnCodeError(r.Context(), w, http.StatusUnauthorized, "no authorization header")
-
-		return
-	}
-
-	parts := strings.Split(auth, " ")
-	if len(parts) != 2 {
-		returnCodeError(r.Context(), w, http.StatusUnauthorized, "invalid authorization header")
-
-		return
-	}
-
-	if parts[0] != "Bearer" {
-		returnCodeError(r.Context(), w, http.StatusUnauthorized, "invalid authorization header")
-
-		return
-	}
-
-	token := parts[1]
-	if token != config.APIKey() {
-		returnCodeError(r.Context(), w, http.StatusUnauthorized, "invalid authorization header")
-
-		return
-	}
-
 	b, err := io.ReadAll(r.Body)
 	if err != nil {
 		returnError(r.Context(), w, err, "error reading body")
@@ -200,37 +172,6 @@ func (p *pubRouter) listFollowing(w http.ResponseWriter, r *http.Request) {
 	collection := ap.NewCollection(user.Following, []string{})
 	if err := json.NewEncoder(w).Encode(collection); err != nil {
 		returnError(r.Context(), w, err, "error encoding collection")
-
-		return
-	}
-}
-
-func (p *pubRouter) acceptActivity(w http.ResponseWriter, r *http.Request) {
-	b, err := io.ReadAll(r.Body)
-	if err != nil {
-		returnError(r.Context(), w, err, "error reading body")
-
-		return
-	}
-
-	var activity activityInput
-	if err := json.Unmarshal(b, &activity); err != nil {
-		returnError(r.Context(), w, err, "error decoding follow")
-
-		return
-	}
-
-	ar, err := p.pub.CreateActivity(r.Context(), ap.Inbox, activity.Context, activity.Type, activity.ID, b)
-	if err != nil {
-		returnError(r.Context(), w, err, "error creating activity")
-
-		return
-	}
-
-	w.WriteHeader(http.StatusCreated)
-
-	if err := json.NewEncoder(w).Encode(ar); err != nil {
-		returnError(r.Context(), w, err, "error encoding activity")
 
 		return
 	}
