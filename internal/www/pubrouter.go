@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"regexp"
-	"slices"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -75,7 +74,7 @@ func (p *pubRouter) createActivity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !slices.Contains(note.Context, ap.ActivityStreamsContext) {
+	if !note.Context.Contains(ap.ActivityStreamsContext) {
 		returnCodeError(r.Context(), w, http.StatusUnprocessableEntity, "only ActivityStreams context is supported")
 
 		return
@@ -83,7 +82,7 @@ func (p *pubRouter) createActivity(w http.ResponseWriter, r *http.Request) {
 
 	me := ap.GetMe()
 
-	note.Context = []string{ap.ActivityStreamsContext}
+	note.Context = ap.NewContext(ap.ActivityStreamsContext)
 	note.ID = fmt.Sprintf("%s/notes/%s", me.ID, uuid.New())
 	note.AttributedTo = me.ID
 	note.Type = "Note"
@@ -92,7 +91,7 @@ func (p *pubRouter) createActivity(w http.ResponseWriter, r *http.Request) {
 	note.Cc = []string{me.Followers}
 
 	activity := ap.Activity[ap.Note]{
-		Context:   []string{ap.ActivityStreamsContext},
+		Context:   ap.NewContext(ap.ActivityStreamsContext),
 		Type:      "Create",
 		ID:        fmt.Sprintf("%s/outbox/%s", me.ID, uuid.New()),
 		Actor:     me.ID,

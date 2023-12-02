@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 )
 
@@ -17,32 +18,54 @@ const SecurityContext = "https://w3id.org/security/v1"
 // A Context is a JSON-LD context.
 //
 // Although there is a normative object definition for context at
-// https://www.w3.org/TR/json-ld/#context-definitions, we use a simple string
-// array, as typically we see context represented as a string or array of
-// strings.
+// https://www.w3.org/TR/json-ld/#context-definitions, we use a simple any
+// array, as we usually do not care about the contents of the context.
 //
 // SEE https://www.w3.org/TR/json-ld/#the-context
-type Context []string
+type Context struct {
+	rawValues []any
+}
+
+// Contains returns true if the given context is contained in the context.
+//
+// NOTE: This only checks for membership and doesn't look for expanded context,
+// etc.
+func (c Context) Contains(context any) bool {
+	return slices.Contains(c.rawValues, context)
+}
 
 // UnmarshalJSON implements the json.Unmarshaler interface.
 func (c *Context) UnmarshalJSON(data []byte) error {
-	var context string
-	if err := json.Unmarshal(data, &context); err == nil {
-		*c = Context{context}
+	var rawValuesArray []any
+	if err := json.Unmarshal(data, &rawValuesArray); err == nil {
+		c.rawValues = rawValuesArray
 
 		return nil
 	}
 
-	var contexts []string
-	if err := json.Unmarshal(data, &contexts); err != nil {
-		// HACK: If we can't unmarshal as a string or array of strings, this is
-		// a context object, and we just ignore those now.
-		return nil //nolint:nilerr
+	var rawValues any
+	if err := json.Unmarshal(data, &rawValues); err != nil {
+		return fmt.Errorf("unmarshal context: %w", err)
 	}
 
-	*c = Context(contexts)
+	c.rawValues = []any{rawValues}
 
 	return nil
+}
+
+// MarshalJSON implements the json.Marshaler interface.
+func (c Context) MarshalJSON() ([]byte, error) {
+	b, err := json.Marshal(c.rawValues)
+	if err != nil {
+		return nil, fmt.Errorf("marshal context: %w", err)
+	}
+
+	return b, nil
+}
+
+// NewContext creates a new context from the given raw values.
+func NewContext(rawValues ...any) Context {
+	return Context{rawValues: rawValues}
 }
 
 // An Actor is an ActivityPub actor.
@@ -157,7 +180,7 @@ func GetUser(username string) (Actor, error) {
 	}
 
 	return Actor{
-		Context:           Context{ActivityStreamsContext, SecurityContext},
+		Context:           NewContext(ActivityStreamsContext, SecurityContext),
 		Type:              "Person",
 		ID:                fmt.Sprintf("https://%s/~%s", Domain, username),
 		Inbox:             fmt.Sprintf("https://%s/~%s/inbox", Domain, username),
@@ -168,7 +191,7 @@ func GetUser(username string) (Actor, error) {
 		Name:              "Jonathan Clem",
 		Summary:           "A person that enjoys helping build things on the internet",
 		Icon: Image{
-			Context: Context{ActivityStreamsContext},
+			Context: NewContext(ActivityStreamsContext),
 			Type:    "Image",
 			Name:    "Photograph of Jonathan Clem",
 			URL:     "https://jclem.nyc3.cdn.digitaloceanspaces.com/profile/profile-1024.webp",
@@ -184,7 +207,7 @@ func GetUser(username string) (Actor, error) {
 // NewCollection creates a new OrderedCollection containing the given items.
 func NewCollection[T any](id string, items []T) OrderedCollection[T] {
 	return OrderedCollection[T]{
-		Context:      Context{ActivityStreamsContext},
+		Context:      NewContext(ActivityStreamsContext),
 		Type:         "OrderedCollection",
 		ID:           id,
 		TotalItems:   len(items),

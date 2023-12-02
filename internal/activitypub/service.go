@@ -421,7 +421,7 @@ type NoteRecord struct {
 
 func (n *NoteRecord) ToNote() *Note {
 	return &Note{
-		Context:      Context{ActivityStreamsContext},
+		Context:      NewContext([]string{ActivityStreamsContext}),
 		Type:         "Note",
 		ID:           n.ObjectID,
 		AttributedTo: GetMe().ID,
