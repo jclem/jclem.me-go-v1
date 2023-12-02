@@ -40,15 +40,8 @@ func (s *Service) CreateActivity(ctx context.Context, mailbox Mailbox, context, 
 	}
 
 	defer func() {
-		if err != nil {
-			if rerr := tx.Rollback(ctx); rerr != nil {
-				slog.ErrorContext(ctx, "failed to rollback transactionv", "error", rerr)
-			}
-		} else {
-			if cerr := tx.Commit(ctx); cerr != nil {
-				slog.ErrorContext(ctx, "failed to commit transaction", "error", cerr)
-				err = cerr
-			}
+		if terr := endTransaction(ctx, tx, err); terr != nil {
+			err = terr
 		}
 	}()
 
@@ -68,9 +61,14 @@ func (s *Service) CreateActivity(ctx context.Context, mailbox Mailbox, context, 
 		return ActivityRecord{}, fmt.Errorf("failed to insert activity: %w", err)
 	}
 
-	if a.Type == "Follow" {
+	switch a.Type {
+	case "Follow":
 		if _, err := s.river.InsertTx(ctx, tx, HandleFollowArgs{ActivityID: a.ID}, nil); err != nil {
 			return ActivityRecord{}, fmt.Errorf("failed to insert follow job: %w", err)
+		}
+	case "Create":
+		if _, err := s.river.InsertTx(ctx, tx, HandleCreateArgs{ActivityID: a.ID}, nil); err != nil {
+			return ActivityRecord{}, fmt.Errorf("failed to insert create job: %w", err)
 		}
 	}
 
@@ -152,6 +150,29 @@ func (s *Service) ListFollowers(ctx context.Context) ([]FollowerRecord, error) {
 	return followers, nil
 }
 
+// CreateNote creates a new note record.
+func (s *Service) CreateNote(ctx context.Context, activityID string, data []byte) (NoteRecord, error) {
+	now := time.Now().UTC()
+
+	var n NoteRecord
+
+	query, args, err := s.sql.
+		Insert(notesTable).
+		Columns(notesFieldsWritable...).
+		Values(activityID, data, now, now).
+		Suffix("RETURNING " + strings.Join(notesFields, ", ")).
+		ToSql()
+	if err != nil {
+		return NoteRecord{}, fmt.Errorf("failed to build query: %w", err)
+	}
+
+	if err := s.pool.QueryRow(ctx, query, args...).Scan(n.scannableFields()...); err != nil {
+		return NoteRecord{}, fmt.Errorf("failed to insert note: %w", err)
+	}
+
+	return n, nil
+}
+
 // NewService creates a new Service.
 func NewService(ctx context.Context, connString string) (*Service, error) {
 	pool, err := pgxpool.New(ctx, connString)
@@ -166,6 +187,10 @@ func NewService(ctx context.Context, connString string) (*Service, error) {
 
 	workers := river.NewWorkers()
 	if err := river.AddWorkerSafely(workers, newHandleFollowWorker(&s)); err != nil {
+		return nil, fmt.Errorf("failed to add worker: %w", err)
+	}
+
+	if err := river.AddWorkerSafely(workers, newHandleCreateWorker(&s)); err != nil {
 		return nil, fmt.Errorf("failed to add worker: %w", err)
 	}
 
@@ -280,4 +305,62 @@ func (a *FollowerRecord) scannableFields() []any {
 		&a.CreatedAt,
 		&a.UpdatedAt,
 	}
+}
+
+const notesTable = "notes"
+const notesRecordIDColumn = "id"
+const notesActivityIDColumn = "activity_id"
+const notesDataColumn = "data"
+const notesCreatedAtColumn = "created_at"
+const notesUpdatedAtColumn = "updated_at"
+
+var notesFields = []string{ //nolint:gochecknoglobals
+	notesRecordIDColumn,
+	notesActivityIDColumn,
+	notesDataColumn,
+	notesCreatedAtColumn,
+	notesUpdatedAtColumn}
+
+var notesFieldsWritable = []string{ //nolint:gochecknoglobals
+	notesActivityIDColumn,
+	notesDataColumn,
+	notesCreatedAtColumn,
+	notesUpdatedAtColumn}
+
+// An NoteRecord is a database record containing a note.
+type NoteRecord struct {
+	RecordID   int64     `json:"record_id"`
+	ActivityID string    `json:"activity_id"`
+	Data       []byte    `json:"data"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+func (n *NoteRecord) scannableFields() []any {
+	return []any{
+		&n.RecordID,
+		&n.ActivityID,
+		&n.Data,
+		&n.CreatedAt,
+		&n.UpdatedAt,
+	}
+}
+
+func endTransaction(ctx context.Context, tx pgx.Tx, err error) error {
+	if err != nil {
+		if rerr := tx.Rollback(ctx); rerr != nil {
+			// On a failed rollback, we don't want to return the rollback error,
+			// but the original error will instead be used as the cause by the
+			// caller.
+			slog.Error("failed to rollback transaction", "error", rerr)
+		}
+	} else {
+		if cerr := tx.Commit(ctx); cerr != nil {
+			slog.Error("failed to commit transaction", "error", cerr)
+
+			return fmt.Errorf("failed to commit transaction: %w", cerr)
+		}
+	}
+
+	return nil
 }

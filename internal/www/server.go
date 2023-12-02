@@ -90,11 +90,11 @@ func (s *Server) Start() error {
 
 	if config.IsProd() {
 		hr := hostrouter.New()
-		hr.Map(ap.Domain, pubRouter(s))
+		hr.Map(ap.Domain, newPubRouter(s.pub))
 		hr.Map(domain, s.webrouter())
 		r.Mount("/", hr)
 	} else {
-		r.Mount("/pub", pubRouter(s))
+		r.Mount("/pub", newPubRouter(s.pub))
 		r.Mount("/", s.webrouter())
 	}
 
