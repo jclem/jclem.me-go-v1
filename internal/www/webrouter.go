@@ -14,6 +14,9 @@ import (
 	"github.com/jclem/jclem.me/internal/posts"
 	"github.com/jclem/jclem.me/internal/www/view"
 	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/extension"
+	"github.com/yuin/goldmark/renderer/html"
+	"go.abhg.dev/goldmark/frontmatter"
 )
 
 type webRouter struct {
@@ -24,12 +27,34 @@ type webRouter struct {
 	view  *view.Service
 }
 
-func newWebRouter(
-	md goldmark.Markdown,
-	pages *pages.Service,
-	posts *posts.Service,
-	view *view.Service,
-) *webRouter {
+func newWebRouter() (*webRouter, error) {
+	pages := pages.New()
+	if err := pages.Start(); err != nil {
+		return nil, fmt.Errorf("error starting pages service: %w", err)
+	}
+
+	posts := posts.New()
+	if err := posts.Start(); err != nil {
+		return nil, fmt.Errorf("error starting posts service: %w", err)
+	}
+
+	view, err := view.New(pages, posts)
+	if err != nil {
+		return nil, fmt.Errorf("error creating view service: %w", err)
+	}
+
+	md := goldmark.New(
+		goldmark.WithExtensions(
+			extension.NewFootnote(),
+			extension.NewTypographer(),
+			extension.NewLinkify(),
+			&frontmatter.Extender{},
+		),
+		goldmark.WithRendererOptions(
+			html.WithUnsafe(),
+		),
+	)
+
 	r := chi.NewRouter()
 	w := webRouter{Mux: r, md: md, pages: pages, posts: posts, view: view}
 	r.Use(httplog.RequestLogger(httplog.NewLogger("www")))
@@ -40,7 +65,7 @@ func newWebRouter(
 	r.Get("/rss.xml", w.rss)
 	r.Handle("/public/*", http.StripPrefix("/public/", http.FileServer(http.Dir("internal/www/public"))))
 
-	return &w
+	return &w, nil
 }
 
 func (wr *webRouter) renderHome(w http.ResponseWriter, r *http.Request) {

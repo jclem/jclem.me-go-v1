@@ -1,6 +1,7 @@
 package www
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -26,7 +27,12 @@ type pubRouter struct {
 	pub *ap.Service
 }
 
-func newPubRouter(pub *ap.Service) *pubRouter {
+func newPubRouter() (*pubRouter, error) {
+	pub, err := ap.NewService(context.Background(), config.DatabaseURL())
+	if err != nil {
+		return nil, fmt.Errorf("error creating activitypub service: %w", err)
+	}
+
 	r := chi.NewRouter()
 	p := pubRouter{Mux: r, pub: pub}
 	r.Use(httplog.RequestLogger(httplog.NewLogger("pub")))
@@ -34,7 +40,7 @@ func newPubRouter(pub *ap.Service) *pubRouter {
 	r.Get("/.well-known/webfinger", p.handleWebfinger)
 	r.Mount("/~{username}", p.userRouter())
 
-	return &p
+	return &p, nil
 }
 
 func (p *pubRouter) userRouter() chi.Router { //nolint:ireturn

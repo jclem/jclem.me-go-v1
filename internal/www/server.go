@@ -12,72 +12,30 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/hostrouter"
 	ap "github.com/jclem/jclem.me/internal/activitypub"
-	"github.com/jclem/jclem.me/internal/pages"
-	"github.com/jclem/jclem.me/internal/posts"
 	"github.com/jclem/jclem.me/internal/www/config"
-	"github.com/jclem/jclem.me/internal/www/view"
-	"github.com/yuin/goldmark"
-	"github.com/yuin/goldmark/extension"
-	"github.com/yuin/goldmark/renderer/html"
-	"go.abhg.dev/goldmark/frontmatter"
 )
 
 type Server struct {
-	md    goldmark.Markdown
-	pages *pages.Service
-	posts *posts.Service
-	view  *view.Service
-	pub   *ap.Service
+	*chi.Mux
 }
 
 const domain = "www.jclem.me"
 
 func New() (*Server, error) {
-	pagesSvc := pages.New()
-	if err := pagesSvc.Start(); err != nil {
-		return nil, fmt.Errorf("error starting pages service: %w", err)
-	}
-
-	postsSvc := posts.New()
-	if err := postsSvc.Start(); err != nil {
-		return nil, fmt.Errorf("error starting posts service: %w", err)
-	}
-
-	viewSvc, err := view.New(pagesSvc, postsSvc)
+	webRouter, err := newWebRouter()
 	if err != nil {
-		return nil, fmt.Errorf("error creating view service: %w", err)
+		return nil, fmt.Errorf("error creating web router: %w", err)
 	}
 
-	gm := goldmark.New(
-		goldmark.WithExtensions(
-			extension.NewFootnote(),
-			extension.NewTypographer(),
-			extension.NewLinkify(),
-			&frontmatter.Extender{},
-		),
-		goldmark.WithRendererOptions(
-			html.WithUnsafe(),
-		),
-	)
-
-	pub, err := ap.NewService(context.Background(), config.DatabaseURL())
+	pubRouter, err := newPubRouter()
 	if err != nil {
-		return nil, fmt.Errorf("error creating activitypub service: %w", err)
+		return nil, fmt.Errorf("error creating pub router: %w", err)
 	}
 
-	return &Server{
-		pages: pagesSvc,
-		posts: postsSvc,
-		view:  viewSvc,
-		md:    gm,
-		pub:   pub,
-	}, nil
-}
-
-func (s *Server) Start() error {
-	middleware.RequestIDHeader = "fly-request-id"
+	s := Server{}
 
 	r := chi.NewRouter()
+	middleware.RequestIDHeader = "fly-request-id"
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
@@ -85,17 +43,21 @@ func (s *Server) Start() error {
 
 	if config.IsProd() {
 		hr := hostrouter.New()
-		hr.Map(ap.Domain, newPubRouter(s.pub))
-		hr.Map(domain, newWebRouter(s.md, s.pages, s.posts, s.view))
+		hr.Map(ap.Domain, pubRouter)
+		hr.Map(domain, webRouter)
 		r.Mount("/", hr)
 	} else {
-		r.Mount("/pub", newPubRouter(s.pub))
-		r.Mount("/", newWebRouter(s.md, s.pages, s.posts, s.view))
+		r.Mount("/pub", pubRouter)
+		r.Mount("/", webRouter)
 	}
 
+	return &s, nil
+}
+
+func (s *Server) Start() error {
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%s", config.Port()),
-		Handler:           r,
+		Handler:           s,
 		ReadTimeout:       1 * time.Second,
 		ReadHeaderTimeout: 500 * time.Millisecond,
 		WriteTimeout:      5 * time.Second,
