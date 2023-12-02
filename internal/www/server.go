@@ -3,18 +3,14 @@ package www
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"html/template"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/hostrouter"
-	"github.com/go-chi/httplog/v2"
 	ap "github.com/jclem/jclem.me/internal/activitypub"
 	"github.com/jclem/jclem.me/internal/pages"
 	"github.com/jclem/jclem.me/internal/posts"
@@ -85,17 +81,16 @@ func (s *Server) Start() error {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
-
-	r.Get("/meta/healthcheck", s.healthcheck())
+	r.Get("/meta/healthcheck", s.healthcheck)
 
 	if config.IsProd() {
 		hr := hostrouter.New()
 		hr.Map(ap.Domain, newPubRouter(s.pub))
-		hr.Map(domain, s.webrouter())
+		hr.Map(domain, newWebRouter(s.md, s.pages, s.posts, s.view))
 		r.Mount("/", hr)
 	} else {
 		r.Mount("/pub", newPubRouter(s.pub))
-		r.Mount("/", s.webrouter())
+		r.Mount("/", newWebRouter(s.md, s.pages, s.posts, s.view))
 	}
 
 	srv := &http.Server{
@@ -115,132 +110,8 @@ func (s *Server) Start() error {
 	return nil
 }
 
-func (s *Server) webrouter() chi.Router { //nolint:ireturn
-	r := chi.NewRouter()
-	r.Use(httplog.RequestLogger(httplog.NewLogger("www")))
-	r.Get("/", s.renderHome())
-	r.Get("/writing", s.listPosts())
-	r.Get("/writing/{slug}", s.showPost())
-	r.Get("/sitemap.xml", s.sitemap())
-	r.Get("/rss.xml", s.rss())
-	r.Handle("/public/*", http.StripPrefix("/public/", http.FileServer(http.Dir("internal/www/public"))))
-
-	return r
-}
-
-func (s *Server) renderHome() http.HandlerFunc {
-	return func(w http.ResponseWriter, _ *http.Request) {
-		page, err := s.pages.Get("about")
-		if err != nil {
-			returnError(w, err, "error getting page")
-
-			return
-		}
-
-		if err := s.view.RenderHTML(w, "home", struct{ Content template.HTML }{Content: page.Content},
-			view.WithTitle(page.Title),
-			view.WithDescription(page.Description),
-		); err != nil {
-			returnError(w, err, "error rendering page")
-
-			return
-		}
-	}
-}
-
-type listPostsData struct {
-	Title       string
-	Description string
-	Posts       []posts.Post
-}
-
-func (s *Server) listPosts() http.HandlerFunc {
-	return func(w http.ResponseWriter, _ *http.Request) {
-		posts := s.posts.List()
-
-		if err := s.view.RenderHTML(w, "writing/index", listPostsData{Posts: posts},
-			view.WithTitle("Writing Archive"),
-			view.WithDescription("A collection of articles and blog posts by Jonathan Clem"),
-			view.WithLayout("writing/layout/index"),
-		); err != nil {
-			returnError(w, err, "error rendering page")
-
-			return
-		}
-	}
-}
-
-func (s *Server) showPost() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		slug := chi.URLParam(r, "slug")
-
-		post, err := s.posts.Get(slug)
-		if err != nil {
-			if errors.As(err, &posts.PostNotFoundError{}) {
-				returnCodeError(w, http.StatusNotFound, fmt.Sprintf("post not found: %s", slug))
-
-				return
-			}
-
-			returnError(w, err, "error getting post")
-
-			return
-		}
-
-		if err := s.view.RenderHTML(w, "writing/show", post,
-			view.WithTitle(post.Title),
-			view.WithDescription(post.Summary),
-			view.WithLayout("writing/layout/show")); err != nil {
-			returnError(w, err, "error rendering page")
-
-			return
-		}
-	}
-}
-
-func (*Server) healthcheck() http.HandlerFunc {
-	return func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}
-}
-
-func (s *Server) sitemap() http.HandlerFunc {
-	return func(w http.ResponseWriter, _ *http.Request) {
-		posts := s.posts.List()
-
-		w.Header().Set("Content-Type", "application/xml")
-
-		if err := s.view.RenderXML(w, "sitemap.xml", posts); err != nil {
-			returnError(w, err, "error rendering sitemap")
-
-			return
-		}
-	}
-}
-
-type rssData struct {
-	BuildDate     string
-	CopyrightYear string
-	Posts         []posts.Post
-}
-
-func (s *Server) rss() http.HandlerFunc {
-	return func(w http.ResponseWriter, _ *http.Request) {
-		posts := s.posts.List()
-		now := time.Now()
-
-		w.Header().Set("Content-Type", "application/xml")
-
-		if err := s.view.RenderXML(w, "rss.xml", rssData{
-			BuildDate:     now.UTC().Format(http.TimeFormat),
-			CopyrightYear: strconv.Itoa(now.Year() - 1),
-			Posts:         posts,
-		}); err != nil {
-			returnError(w, err, "error rendering rss")
-
-			return
-		}
-	}
+func (*Server) healthcheck(w http.ResponseWriter, _ *http.Request) {
+	w.WriteHeader(http.StatusOK)
 }
 
 type apiError struct {
@@ -249,24 +120,30 @@ type apiError struct {
 	Message string `json:"message"`
 }
 
-func returnCodeError(w http.ResponseWriter, code int, message string) {
+func returnCodeError(ctx context.Context, w http.ResponseWriter, code int, message string) {
 	w.WriteHeader(code)
 	w.Header().Set("Content-Type", "application/json")
 
-	_ = json.NewEncoder(w).Encode(apiError{ //nolint:errchkjson
+	if err := json.NewEncoder(w).Encode(apiError{
 		Code:    code,
 		Reason:  http.StatusText(code),
 		Message: message,
-	})
+	}); err != nil {
+		slog.ErrorContext(ctx, "error encoding error response", "error", err)
+	}
 }
 
-func returnError(w http.ResponseWriter, err error, message string) {
+func returnError(ctx context.Context, w http.ResponseWriter, err error, message string) {
 	w.WriteHeader(http.StatusInternalServerError)
 	w.Header().Set("Content-Type", "application/json")
 
-	_ = json.NewEncoder(w).Encode(apiError{ //nolint:errchkjson
+	slog.ErrorContext(ctx, fmt.Sprintf("unexpected error in request handler: %s", message), "error", err)
+
+	if err := json.NewEncoder(w).Encode(apiError{
 		Code:    http.StatusInternalServerError,
 		Reason:  http.StatusText(http.StatusInternalServerError),
-		Message: fmt.Errorf("%s: %w", message, err).Error(),
-	})
+		Message: "Internal server error",
+	}); err != nil {
+		slog.ErrorContext(ctx, "error encoding error response", "error", err)
+	}
 }
