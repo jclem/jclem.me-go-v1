@@ -36,12 +36,7 @@ func (w *HandleCreateWorker) Work(ctx context.Context, job *river.Job[HandleCrea
 		return fmt.Errorf("failed to unmarshal activity data: %w", err)
 	}
 
-	noteb, err := json.Marshal(a.Object)
-	if err != nil {
-		return fmt.Errorf("failed to marshal note: %w", err)
-	}
-
-	note, err := w.pub.CreateNote(ctx, activity.ID, noteb)
+	note, err := w.pub.CreateNote(ctx, a.ID, a.Object)
 	if err != nil {
 		return fmt.Errorf("failed to create note: %w", err)
 	}

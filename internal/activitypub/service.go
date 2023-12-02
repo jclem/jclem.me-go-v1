@@ -2,8 +2,10 @@ package activitypub
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -117,6 +119,62 @@ func (s *Service) CreateFollower(ctx context.Context, actorID, activityID string
 	return f, nil
 }
 
+// ListPublicOutbox lists all public outbox activity.
+func (s *Service) ListPublicOutbox(ctx context.Context) ([]ActivityRecord, error) {
+	query, args, err := s.sql.
+		Select(activitiesFields...).
+		From(activitiesTable).
+		Where(squirrel.Eq{activitiesMailboxColumn: Outbox}).
+		Where(squirrel.Eq{activitiesTypeColumn: "Create"}).
+		ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build query: %w", err)
+	}
+
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query activities: %w", err)
+	}
+
+	var activities []ActivityRecord
+
+	for rows.Next() {
+		var a ActivityRecord
+		if err := rows.Scan(a.scannableFields()...); err != nil {
+			return nil, fmt.Errorf("failed to scan activity: %w", err)
+		}
+
+		activities = append(activities, a)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate activities: %w", err)
+	}
+
+	var publicActivities []ActivityRecord
+
+	for _, a := range activities {
+		type publicActivity struct {
+			To []string `json:"to"`
+		}
+
+		var pa publicActivity
+		if err := json.Unmarshal(a.Data, &pa); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal activity: %w", err)
+		}
+
+		if len(pa.To) == 0 {
+			continue
+		}
+
+		if slices.Contains(pa.To, ActivityStreamsContext+"#Public") {
+			publicActivities = append(publicActivities, a)
+		}
+	}
+
+	return publicActivities, nil
+}
+
 // ListFollowers lists all followers.
 func (s *Service) ListFollowers(ctx context.Context) ([]FollowerRecord, error) {
 	query, args, err := s.sql.
@@ -151,7 +209,7 @@ func (s *Service) ListFollowers(ctx context.Context) ([]FollowerRecord, error) {
 }
 
 // CreateNote creates a new note record.
-func (s *Service) CreateNote(ctx context.Context, activityID string, data []byte) (NoteRecord, error) {
+func (s *Service) CreateNote(ctx context.Context, activityID string, note Note) (NoteRecord, error) {
 	now := time.Now().UTC()
 
 	var n NoteRecord
@@ -159,7 +217,7 @@ func (s *Service) CreateNote(ctx context.Context, activityID string, data []byte
 	query, args, err := s.sql.
 		Insert(notesTable).
 		Columns(notesFieldsWritable...).
-		Values(activityID, data, now, now).
+		Values(activityID, note.ID, note.Content, note.Published, note.To, note.Cc, now, now).
 		Suffix("RETURNING " + strings.Join(notesFields, ", ")).
 		ToSql()
 	if err != nil {
@@ -268,6 +326,15 @@ func (a *ActivityRecord) scannableFields() []any {
 	}
 }
 
+func ActivityRecordToActivity[T any](r ActivityRecord) (*Activity[T], error) {
+	var a Activity[T]
+	if err := json.Unmarshal(r.Data, &a); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal activity: %w", err)
+	}
+
+	return &a, nil
+}
+
 const followersTable = "followers"
 const followersRecordIDColumn = "id"
 const followersActorIDColumn = "actor_id"
@@ -310,37 +377,70 @@ func (a *FollowerRecord) scannableFields() []any {
 const notesTable = "notes"
 const notesRecordIDColumn = "id"
 const notesActivityIDColumn = "activity_id"
-const notesDataColumn = "data"
+const notesObjectIDColumn = "object_id"
+const notesContentColumn = "content"
+const notesPublishedColumn = "published"
+const notesToColumn = "to_iri"
+const notesCcColumn = "cc_iri"
 const notesCreatedAtColumn = "created_at"
 const notesUpdatedAtColumn = "updated_at"
 
 var notesFields = []string{ //nolint:gochecknoglobals
 	notesRecordIDColumn,
 	notesActivityIDColumn,
-	notesDataColumn,
+	notesObjectIDColumn,
+	notesContentColumn,
+	notesPublishedColumn,
+	notesToColumn,
+	notesCcColumn,
 	notesCreatedAtColumn,
 	notesUpdatedAtColumn}
 
 var notesFieldsWritable = []string{ //nolint:gochecknoglobals
 	notesActivityIDColumn,
-	notesDataColumn,
+	notesObjectIDColumn,
+	notesContentColumn,
+	notesPublishedColumn,
+	notesToColumn,
+	notesCcColumn,
 	notesCreatedAtColumn,
 	notesUpdatedAtColumn}
 
 // An NoteRecord is a database record containing a note.
 type NoteRecord struct {
-	RecordID   int64     `json:"record_id"`
-	ActivityID string    `json:"activity_id"`
-	Data       []byte    `json:"data"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	RecordID   int64
+	ActivityID string
+	ObjectID   string
+	Content    string
+	Published  time.Time
+	To         []string
+	Cc         []string
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
+func (n *NoteRecord) ToNote() *Note {
+	return &Note{
+		Context:      Context{ActivityStreamsContext},
+		Type:         "Note",
+		ID:           n.ObjectID,
+		AttributedTo: GetMe().ID,
+		Content:      n.Content,
+		Published:    n.Published.Format(time.RFC3339),
+		To:           n.To,
+		Cc:           n.Cc,
+	}
 }
 
 func (n *NoteRecord) scannableFields() []any {
 	return []any{
 		&n.RecordID,
 		&n.ActivityID,
-		&n.Data,
+		&n.ObjectID,
+		&n.Content,
+		&n.Published,
+		&n.To,
+		&n.Cc,
 		&n.CreatedAt,
 		&n.UpdatedAt,
 	}

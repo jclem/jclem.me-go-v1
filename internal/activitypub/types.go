@@ -123,13 +123,14 @@ type Activity[T any] struct {
 //
 // SEE https://www.w3.org/TR/activitystreams-vocabulary/#dfn-note
 type Note struct {
-	Context   Context  `json:"@context"`
-	Type      string   `json:"type"`
-	ID        string   `json:"id"`
-	Content   string   `json:"content"`
-	Published string   `json:"published"`
-	To        []string `json:"to"`
-	Cc        []string `json:"cc"`
+	Context      Context  `json:"@context"`
+	Type         string   `json:"type"`
+	ID           string   `json:"id"`
+	AttributedTo string   `json:"attributedTo"`
+	Content      string   `json:"content"`
+	Published    string   `json:"published"`
+	To           []string `json:"to"`
+	Cc           []string `json:"cc"`
 }
 
 const me = "jclem"

@@ -7,8 +7,11 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"slices"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	ap "github.com/jclem/jclem.me/internal/activitypub"
 	"github.com/jclem/jclem.me/internal/webfinger"
 	"github.com/jclem/jclem.me/internal/www/config"
@@ -48,7 +51,7 @@ func (p *pubRouter) userRouter() chi.Router { //nolint:ireturn
 	rr.Get("/outbox", p.getOutbox)
 	rr.Get("/followers", p.listFollowers)
 	rr.Get("/following", p.listFollowing)
-	rr.Post("/inbox", p.createActivity)
+	rr.Post("/inbox", p.acceptActivity)
 
 	rr.Group(func(rr chi.Router) {
 		rr.Use(p.verifyBearerToken)
@@ -59,6 +62,77 @@ func (p *pubRouter) userRouter() chi.Router { //nolint:ireturn
 }
 
 func (p *pubRouter) createActivity(w http.ResponseWriter, r *http.Request) {
+	var note ap.Note
+	if err := json.NewDecoder(r.Body).Decode(&note); err != nil {
+		returnError(r.Context(), w, err, "error decoding note")
+
+		return
+	}
+
+	if note.Type != "Note" {
+		returnCodeError(r.Context(), w, http.StatusUnprocessableEntity, "only Note activities are supported")
+
+		return
+	}
+
+	if !slices.Contains(note.Context, ap.ActivityStreamsContext) {
+		returnCodeError(r.Context(), w, http.StatusUnprocessableEntity, "only ActivityStreams context is supported")
+
+		return
+	}
+
+	me := ap.GetMe()
+
+	note.Context = []string{ap.ActivityStreamsContext}
+	note.ID = fmt.Sprintf("%s/notes/%s", me.ID, uuid.New())
+	note.Type = "Note"
+	note.Published = time.Now().UTC().Format(http.TimeFormat)
+	note.To = []string{ap.ActivityStreamsContext + "#Public"}
+	note.Cc = []string{me.Followers}
+
+	activity := ap.Activity[ap.Note]{
+		Context:   []string{ap.ActivityStreamsContext},
+		Type:      "Create",
+		ID:        fmt.Sprintf("%s/outbox/%s", me.ID, uuid.New()),
+		Actor:     me.ID,
+		Object:    note,
+		Published: note.Published,
+		To:        note.To,
+		Cc:        note.Cc,
+	}
+
+	j, err := json.Marshal(activity)
+	if err != nil {
+		returnError(r.Context(), w, err, "error encoding activity")
+
+		return
+	}
+
+	ar, err := p.pub.CreateActivity(r.Context(), ap.Outbox, ap.ActivityStreamsContext, activity.Type, activity.ID, j)
+	if err != nil {
+		returnError(r.Context(), w, err, "error creating activity")
+
+		return
+	}
+
+	a, err := ap.ActivityRecordToActivity[ap.Note](ar)
+	if err != nil {
+		returnError(r.Context(), w, err, "error converting activity record to activity")
+
+		return
+	}
+
+	w.Header().Set("Location", a.ID)
+	w.WriteHeader(http.StatusCreated)
+
+	if err := json.NewEncoder(w).Encode(a); err != nil {
+		returnError(r.Context(), w, err, "error encoding activity")
+
+		return
+	}
+}
+
+func (p *pubRouter) acceptActivity(w http.ResponseWriter, r *http.Request) {
 	b, err := io.ReadAll(r.Body)
 	if err != nil {
 		returnError(r.Context(), w, err, "error reading body")
@@ -112,16 +186,29 @@ func (p *pubRouter) getNote(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *pubRouter) getOutbox(w http.ResponseWriter, r *http.Request) {
-	username := chi.URLParam(r, "username")
-	user, err := ap.GetUser(username)
+	me := ap.GetMe()
 
+	items, err := p.pub.ListPublicOutbox(r.Context())
 	if err != nil {
-		returnCodeError(r.Context(), w, http.StatusNotFound, fmt.Sprintf("user not found: %q", username))
+		returnError(r.Context(), w, err, "error listing outbox")
 
 		return
 	}
 
-	collection := ap.NewCollection(user.Outbox, []ap.Activity[ap.Note]{})
+	itemObjects := make([]*ap.Activity[ap.Note], 0, len(items))
+
+	for _, item := range items {
+		itemObject, err := ap.ActivityRecordToActivity[ap.Note](item)
+		if err != nil {
+			returnError(r.Context(), w, err, "error converting activity record to activity")
+
+			return
+		}
+
+		itemObjects = append(itemObjects, itemObject)
+	}
+
+	collection := ap.NewCollection(me.Outbox, itemObjects)
 	if err := json.NewEncoder(w).Encode(collection); err != nil {
 		returnError(r.Context(), w, err, "error encoding actor")
 

@@ -30,6 +30,7 @@ require (
 	github.com/go-chi/hostrouter v0.2.0
 	github.com/go-chi/httplog/v2 v2.0.7
 	github.com/go-fed/httpsig v1.1.0
+	github.com/google/uuid v1.4.0
 	github.com/jackc/pgx/v5 v5.5.0
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
