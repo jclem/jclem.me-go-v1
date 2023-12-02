@@ -13,7 +13,6 @@ import (
 	"github.com/google/uuid"
 	ap "github.com/jclem/jclem.me/internal/activitypub"
 	"github.com/jclem/jclem.me/internal/webfinger"
-	"github.com/jclem/jclem.me/internal/www/config"
 )
 
 type activityInput struct {
@@ -24,17 +23,18 @@ type activityInput struct {
 
 type pubRouter struct {
 	*chi.Mux
-	pub *ap.Service
+	pub    *ap.Service
+	apiKey string
 }
 
-func newPubRouter() (*pubRouter, error) {
-	pub, err := ap.NewService(context.Background(), config.DatabaseURL())
+func newPubRouter(databaseURL string, apiKey string) (*pubRouter, error) {
+	pub, err := ap.NewService(context.Background(), databaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("error creating activitypub service: %w", err)
 	}
 
 	r := chi.NewRouter()
-	p := &pubRouter{Mux: r, pub: pub}
+	p := &pubRouter{Mux: r, pub: pub, apiKey: apiKey}
 	r.Use(p.setContentType)
 	r.Get("/.well-known/webfinger", p.handleWebfinger)
 	r.Mount("/~{username}", p.userRouter())
@@ -352,7 +352,7 @@ func (p *pubRouter) verifyBearerToken(next http.Handler) http.Handler {
 			return
 		}
 
-		if token := parts[1]; token != config.APIKey() {
+		if token := parts[1]; token != p.apiKey {
 			returnCodeError(r.Context(), w, http.StatusUnauthorized, "invalid authorization header")
 
 			return

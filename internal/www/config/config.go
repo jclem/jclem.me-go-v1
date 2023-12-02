@@ -1,6 +1,12 @@
 package config
 
-import "os"
+import (
+	"errors"
+	"fmt"
+	"os"
+
+	"github.com/spf13/viper"
+)
 
 type AppEnv string
 
@@ -9,68 +15,71 @@ const (
 	Production  AppEnv = "production"
 )
 
-func Env() AppEnv {
-	return AppEnv(os.Getenv("APP_ENV"))
+type Config struct {
+	Port           string `mapstructure:"port"`
+	AppEnv         AppEnv `mapstructure:"app_env"`
+	DatabaseURL    string `mapstructure:"database_url"`
+	APIKey         string `mapstructure:"api_key"`
+	SpacesSecret   string `mapstructure:"do_spaces_secret"`
+	SpacesKeyID    string `mapstructure:"do_spaces_key_id"`
+	SpacesEndpoint string `mapstructure:"do_spaces_endpoint"`
+	SpacesBucket   string `mapstructure:"do_spaces_bucket"`
 }
 
-func IsDev() bool {
-	return Env() == Development
+func (c Config) IsDev() bool {
+	return c.AppEnv == Development
 }
 
-func IsProd() bool {
-	return Env() == Production
+func (c Config) IsProd() bool {
+	return c.AppEnv == Production
 }
 
-func DatabaseURL() string {
-	return os.Getenv("DATABASE_URL")
+func (c Config) URLUseHTTPS() bool {
+	return c.IsProd()
 }
 
-func APIKey() string {
-	return os.Getenv("API_KEY")
-}
-
-type SpacesConfig struct {
-	Secret   string
-	KeyID    string
-	Endpoint string
-	Bucket   string
-}
-
-func Spaces() *SpacesConfig {
-	return &SpacesConfig{
-		KeyID:    os.Getenv("DO_SPACES_KEY_ID"),
-		Secret:   os.Getenv("DO_SPACES_SECRET"),
-		Endpoint: os.Getenv("DO_SPACES_ENDPOINT"),
-		Bucket:   os.Getenv("DO_SPACES_BUCKET"),
-	}
-}
-
-func Port() string {
-	port := os.Getenv("PORT")
-
-	if port == "" {
-		port = "8080"
-	}
-
-	return port
-}
-
-func URLUseHTTPS() bool {
-	return IsProd()
-}
-
-func URLPort() string {
-	if IsProd() {
+func (c Config) URLPort() string {
+	if c.IsProd() {
 		return "80"
 	}
 
-	return Port()
+	return c.Port
 }
 
-func URLHostname() string {
-	if IsProd() {
+func (c Config) URLHostname() string {
+	if c.IsProd() {
 		return os.Getenv("HOSTNAME")
 	}
 
-	return "localhost:" + URLPort()
+	return "localhost:" + c.URLPort()
+}
+
+// LoadConfig loads the configuration from flags and configuration files into
+// the given context.
+func LoadConfig() (Config, error) {
+	viper.SetDefault("port", "8080")
+	viper.SetDefault("app_env", Development)
+	viper.SetDefault("database_url", "")
+	viper.SetDefault("api_key", "")
+	viper.SetDefault("do_spaces_secret", "")
+	viper.SetDefault("do_spaces_key_id", "")
+	viper.SetDefault("do_spaces_endpoint", "")
+	viper.SetDefault("do_spaces_bucket", "")
+
+	viper.AddConfigPath(".")
+	viper.SetConfigName("config")
+
+	if err := viper.ReadInConfig(); err != nil {
+		var cerr viper.ConfigFileNotFoundError
+		if !errors.As(err, &cerr) {
+			return Config{}, fmt.Errorf("could not read config: %w", err)
+		}
+	}
+
+	var cfg Config
+	if err := viper.Unmarshal(&cfg); err != nil {
+		return Config{}, fmt.Errorf("could not unmarshal config: %w", err)
+	}
+
+	return cfg, nil
 }

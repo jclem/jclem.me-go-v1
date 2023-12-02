@@ -10,7 +10,6 @@ import (
 
 	"github.com/jclem/jclem.me/internal/pages"
 	"github.com/jclem/jclem.me/internal/posts"
-	"github.com/jclem/jclem.me/internal/www/config"
 	"github.com/jclem/jclem.me/internal/www/public"
 )
 
@@ -18,10 +17,12 @@ import (
 var fs embed.FS
 
 type Service struct {
-	pages *pages.Service
-	posts *posts.Service
-	html  *html.Template
-	xml   *text.Template
+	pages    *pages.Service
+	posts    *posts.Service
+	html     *html.Template
+	xml      *text.Template
+	useHTTPS bool
+	hostname string
 }
 
 type renderOpts struct {
@@ -114,15 +115,19 @@ func (s *Service) renderRoot(w io.Writer, title, description string, content htm
 	return nil
 }
 
-func New(pages *pages.Service, posts *posts.Service) (*Service, error) {
+func New(pages *pages.Service, posts *posts.Service, useHTTPS bool, hostname string) (*Service, error) {
+	svc := Service{pages: pages, posts: posts, useHTTPS: useHTTPS, hostname: hostname}
+
 	htmltmpl, err := html.New("").Funcs(html.FuncMap{
 		"mustGetStyles":  public.MustGetStyles,
 		"mustGetScripts": public.MustGetScripts,
-		"url":            url,
+		"url":            svc.url(),
 	}).ParseFS(fs, "templates/*.html.tmpl")
 	if err != nil {
 		return nil, fmt.Errorf("error parsing html templates: %w", err)
 	}
+
+	svc.html = htmltmpl
 
 	subdirs, err := fs.ReadDir("templates")
 	if err != nil {
@@ -144,26 +149,25 @@ func New(pages *pages.Service, posts *posts.Service) (*Service, error) {
 		return nil, fmt.Errorf("error parsing templates: %w", err)
 	}
 
-	xmltmpl, err := text.New("").Funcs(text.FuncMap{"url": url}).ParseFS(fs, "templates/*.xml.tmpl")
+	xmltmpl, err := text.New("").Funcs(text.FuncMap{"url": svc.url()}).ParseFS(fs, "templates/*.xml.tmpl")
 	if err != nil {
 		return nil, fmt.Errorf("error parsing xml templates: %w", err)
 	}
 
-	return &Service{
-		pages: pages,
-		posts: posts,
-		html:  htmltmpl,
-		xml:   xmltmpl,
-	}, nil
+	svc.xml = xmltmpl
+
+	return &svc, nil
 }
 
-func url(path string) string {
-	proto := "http://"
-	if config.URLUseHTTPS() {
-		proto = "https://"
+func (s *Service) url() func(path string) string {
+	return func(path string) string {
+		proto := "http://"
+		if s.useHTTPS {
+			proto = "https://"
+		}
+
+		hostname := s.hostname
+
+		return proto + hostname + path
 	}
-
-	hostname := config.URLHostname()
-
-	return proto + hostname + path
 }

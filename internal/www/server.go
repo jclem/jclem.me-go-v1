@@ -18,17 +18,18 @@ import (
 
 type Server struct {
 	*chi.Mux
+	port string
 }
 
 const domain = "www.jclem.me"
 
-func New() (*Server, error) {
-	webRouter, err := newWebRouter()
+func New(cfg config.Config) (*Server, error) {
+	webRouter, err := newWebRouter(cfg.URLUseHTTPS(), cfg.URLHostname())
 	if err != nil {
 		return nil, fmt.Errorf("error creating web router: %w", err)
 	}
 
-	pubRouter, err := newPubRouter()
+	pubRouter, err := newPubRouter(cfg.DatabaseURL, cfg.APIKey)
 	if err != nil {
 		return nil, fmt.Errorf("error creating pub router: %w", err)
 	}
@@ -36,14 +37,14 @@ func New() (*Server, error) {
 	middleware.RequestIDHeader = "fly-request-id"
 
 	r := chi.NewRouter()
-	s := &Server{Mux: r}
-	r.Use(httplog.RequestLogger(newLogger("server")))
+	s := &Server{Mux: r, port: cfg.Port}
+	r.Use(httplog.RequestLogger(newLogger("server", cfg.IsProd())))
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
 	r.Get("/meta/healthcheck", s.healthcheck)
 
-	if config.IsProd() {
+	if cfg.IsProd() {
 		hr := hostrouter.New()
 		hr.Map(ap.Domain, pubRouter)
 		hr.Map(domain, webRouter)
@@ -58,14 +59,14 @@ func New() (*Server, error) {
 
 func (s *Server) Start() error {
 	srv := &http.Server{
-		Addr:              fmt.Sprintf(":%s", config.Port()),
+		Addr:              fmt.Sprintf(":%s", s.port),
 		Handler:           s,
 		ReadTimeout:       1 * time.Second,
 		ReadHeaderTimeout: 500 * time.Millisecond,
 		WriteTimeout:      5 * time.Second,
 	}
 
-	slog.Info("listening on", slog.String("port", config.Port()))
+	slog.Info("listening on", slog.String("port", s.port))
 
 	if err := srv.ListenAndServe(); err != nil {
 		return fmt.Errorf("error starting server: %w", err)
@@ -114,12 +115,12 @@ func returnError(ctx context.Context, w http.ResponseWriter, err error, message 
 	}
 }
 
-func newLogger(name string) *httplog.Logger {
+func newLogger(name string, prodLogger bool) *httplog.Logger {
 	return httplog.NewLogger(name, httplog.Options{
-		JSON:            config.IsProd(),
+		JSON:            prodLogger,
 		LogLevel:        slog.LevelInfo,
-		Concise:         config.IsProd(),
-		RequestHeaders:  config.IsProd(),
-		ResponseHeaders: config.IsProd(),
+		Concise:         prodLogger,
+		RequestHeaders:  prodLogger,
+		ResponseHeaders: prodLogger,
 	})
 }

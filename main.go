@@ -5,10 +5,16 @@ import (
 	"log"
 
 	"github.com/jclem/jclem.me/internal/www"
+	"github.com/jclem/jclem.me/internal/www/config"
 )
 
 func main() {
-	server, err := www.New()
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		log.Fatal(fmt.Errorf("error loading config: %w", err))
+	}
+
+	server, err := www.New(cfg)
 	if err != nil {
 		log.Fatal(fmt.Errorf("error creating server: %w", err))
 	}

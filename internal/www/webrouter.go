@@ -26,7 +26,7 @@ type webRouter struct {
 	view  *view.Service
 }
 
-func newWebRouter() (*webRouter, error) {
+func newWebRouter(useHTTPS bool, hostname string) (*webRouter, error) {
 	pages := pages.New()
 	if err := pages.Start(); err != nil {
 		return nil, fmt.Errorf("error starting pages service: %w", err)
@@ -37,7 +37,7 @@ func newWebRouter() (*webRouter, error) {
 		return nil, fmt.Errorf("error starting posts service: %w", err)
 	}
 
-	view, err := view.New(pages, posts)
+	view, err := view.New(pages, posts, useHTTPS, hostname)
 	if err != nil {
 		return nil, fmt.Errorf("error creating view service: %w", err)
 	}

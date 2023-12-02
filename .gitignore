@@ -5,3 +5,4 @@ internal/www/public/styles/*
 node_modules/
 tmp/
 .env
+config.toml
