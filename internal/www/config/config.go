@@ -126,6 +126,8 @@ func LoadConfig() (Config, error) {
 	viper.SetDefault("do_spaces_key_id", "")
 	viper.SetDefault("do_spaces_endpoint", "")
 	viper.SetDefault("do_spaces_bucket", "")
+	viper.SetDefault("ap_public_key_pem", "")
+	viper.SetDefault("ap_private_key_pem", "")
 
 	viper.AddConfigPath(".")
 	viper.SetConfigName("config")
