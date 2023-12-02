@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/httplog/v2"
 	"github.com/jclem/jclem.me/internal/pages"
 	"github.com/jclem/jclem.me/internal/posts"
 	"github.com/jclem/jclem.me/internal/www/view"
@@ -56,8 +55,7 @@ func newWebRouter() (*webRouter, error) {
 	)
 
 	r := chi.NewRouter()
-	w := webRouter{Mux: r, md: md, pages: pages, posts: posts, view: view}
-	r.Use(httplog.RequestLogger(httplog.NewLogger("www")))
+	w := &webRouter{Mux: r, md: md, pages: pages, posts: posts, view: view}
 	r.Get("/", w.renderHome)
 	r.Get("/writing", w.listPosts)
 	r.Get("/writing/{slug}", w.showPost)
@@ -65,7 +63,7 @@ func newWebRouter() (*webRouter, error) {
 	r.Get("/rss.xml", w.rss)
 	r.Handle("/public/*", http.StripPrefix("/public/", http.FileServer(http.Dir("internal/www/public"))))
 
-	return &w, nil
+	return w, nil
 }
 
 func (wr *webRouter) renderHome(w http.ResponseWriter, r *http.Request) {

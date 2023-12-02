@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/httplog/v2"
 	ap "github.com/jclem/jclem.me/internal/activitypub"
 	"github.com/jclem/jclem.me/internal/webfinger"
 	"github.com/jclem/jclem.me/internal/www/config"
@@ -34,13 +33,12 @@ func newPubRouter() (*pubRouter, error) {
 	}
 
 	r := chi.NewRouter()
-	p := pubRouter{Mux: r, pub: pub}
-	r.Use(httplog.RequestLogger(httplog.NewLogger("pub")))
+	p := &pubRouter{Mux: r, pub: pub}
 	r.Use(p.setContentType)
 	r.Get("/.well-known/webfinger", p.handleWebfinger)
 	r.Mount("/~{username}", p.userRouter())
 
-	return &p, nil
+	return p, nil
 }
 
 func (p *pubRouter) userRouter() chi.Router { //nolint:ireturn

@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/hostrouter"
+	"github.com/go-chi/httplog/v2"
 	ap "github.com/jclem/jclem.me/internal/activitypub"
 	"github.com/jclem/jclem.me/internal/www/config"
 )
@@ -32,10 +33,11 @@ func New() (*Server, error) {
 		return nil, fmt.Errorf("error creating pub router: %w", err)
 	}
 
-	s := Server{}
+	middleware.RequestIDHeader = "fly-request-id"
 
 	r := chi.NewRouter()
-	middleware.RequestIDHeader = "fly-request-id"
+	s := &Server{Mux: r}
+	r.Use(httplog.RequestLogger(newLogger("server")))
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
@@ -51,7 +53,7 @@ func New() (*Server, error) {
 		r.Mount("/", webRouter)
 	}
 
-	return &s, nil
+	return s, nil
 }
 
 func (s *Server) Start() error {
@@ -91,7 +93,8 @@ func returnCodeError(ctx context.Context, w http.ResponseWriter, code int, messa
 		Reason:  http.StatusText(code),
 		Message: message,
 	}); err != nil {
-		slog.ErrorContext(ctx, "error encoding error response", "error", err)
+		oplog := httplog.LogEntry(ctx)
+		oplog.ErrorContext(ctx, "error encoding error response", "error", err)
 	}
 }
 
@@ -99,13 +102,24 @@ func returnError(ctx context.Context, w http.ResponseWriter, err error, message 
 	w.WriteHeader(http.StatusInternalServerError)
 	w.Header().Set("Content-Type", "application/json")
 
-	slog.ErrorContext(ctx, fmt.Sprintf("unexpected error in request handler: %s", message), "error", err)
+	oplog := httplog.LogEntry(ctx)
+	oplog.ErrorContext(ctx, fmt.Sprintf("unexpected error in request handler: %s", message), "error", err)
 
 	if err := json.NewEncoder(w).Encode(apiError{
 		Code:    http.StatusInternalServerError,
 		Reason:  http.StatusText(http.StatusInternalServerError),
 		Message: "Internal server error",
 	}); err != nil {
-		slog.ErrorContext(ctx, "error encoding error response", "error", err)
+		oplog.ErrorContext(ctx, "error encoding error response", "error", err)
 	}
+}
+
+func newLogger(name string) *httplog.Logger {
+	return httplog.NewLogger(name, httplog.Options{
+		JSON:            config.IsProd(),
+		LogLevel:        slog.LevelInfo,
+		Concise:         config.IsProd(),
+		RequestHeaders:  config.IsProd(),
+		ResponseHeaders: config.IsProd(),
+	})
 }
