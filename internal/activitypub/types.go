@@ -19,12 +19,25 @@ const SecurityContext = "https://w3id.org/security/v1"
 
 // MastodonContext is the Mastodon context.
 var MastodonContext = map[string]string{ //nolint:gochecknoglobals
-	"toot":                      "http://joinmastodon.org/ns#",
-	"discoverable":              "toot:discoverable",
-	"Hashtag":                   "as:Hashtag",
-	"sensitive":                 "as:sensitive",
-	"manuallyApprovesFollowers": "as:manuallyApprovesFollowers",
+	"toot":      "http://joinmastodon.org/ns#",
+	"Hashtag":   "as:Hashtag",
+	"sensitive": "as:sensitive",
 }
+
+// ActorContext is the context for actors.
+//
+// SEE https://docs.joinmastodon.org/spec/activitypub/#PropertyValue
+// > Mastodon currently incorrectly expects and maps the term schema to the base
+// > URI http://schema.org# instead of to the base URI https://schema.org/.
+// > Therefore, JSON-LD processors who use the correct context definition will
+// > fail to process profile fields correctly.
+var ActorContext = NewContext(ActivityStreamsContext, SecurityContext, MastodonContext, map[string]string{ //nolint:gochecknoglobals
+	"discoverable":              "toot:discoverable",
+	"manuallyApprovesFollowers": "as:manuallyApprovesFollowers",
+	"schema":                    "http://schema.org/#",
+	"PropertyValue":             "schema:PropertyValue",
+	"value":                     "schema:value",
+})
 
 // A Context is a JSON-LD context.
 //
@@ -204,21 +217,22 @@ func NewNote(actor Actorish, content string, to, cc []string) Note {
 //
 // SEE https://www.w3.org/TR/activitypub/#actor-objects
 type Actor struct {
-	Context                   Context   `json:"@context"`
-	Type                      string    `json:"type"`
-	ID                        string    `json:"id"`
-	Inbox                     string    `json:"inbox,omitempty"`
-	Outbox                    string    `json:"outbox,omitempty"`
-	Following                 string    `json:"following,omitempty"`
-	Followers                 string    `json:"followers,omitempty"`
-	PreferredUsername         string    `json:"preferredUsername,omitempty"`
-	Name                      string    `json:"name,omitempty"`
-	Summary                   string    `json:"summary,omitempty"`
-	URL                       string    `json:"url,omitempty"`
-	Discoverable              bool      `json:"discoverable"`
-	ManuallyApprovesFollowers bool      `json:"manuallyApprovesFollowers"`
-	Icon                      Image     `json:"icon,omitempty"`
-	PublicKey                 PublicKey `json:"publicKey,omitempty"`
+	Context                   Context            `json:"@context"`
+	Type                      string             `json:"type"`
+	ID                        string             `json:"id"`
+	Inbox                     string             `json:"inbox,omitempty"`
+	Outbox                    string             `json:"outbox,omitempty"`
+	Following                 string             `json:"following,omitempty"`
+	Followers                 string             `json:"followers,omitempty"`
+	PreferredUsername         string             `json:"preferredUsername,omitempty"`
+	Name                      string             `json:"name,omitempty"`
+	Summary                   string             `json:"summary,omitempty"`
+	URL                       string             `json:"url,omitempty"`
+	Discoverable              bool               `json:"discoverable"`
+	ManuallyApprovesFollowers bool               `json:"manuallyApprovesFollowers"`
+	Icon                      Image              `json:"icon,omitempty"`
+	Attachment                []SchemaAttachment `json:"attachment,omitempty"`
+	PublicKey                 PublicKey          `json:"publicKey,omitempty"`
 }
 
 // An Actorish is an interface for types that can be actors (they have
@@ -228,6 +242,7 @@ type Actorish interface {
 	GetImageURL() string
 	GetSummary() string
 	GetUsername() string
+	GetAttachment() map[string]string
 }
 
 // ActorID gets the ID of the actor.
@@ -274,6 +289,17 @@ func ActorFromUser(user Actorish, pubKey identity.SigningKey) (Actor, error) {
 		}
 	}
 
+	var attachment []SchemaAttachment
+	if user.GetAttachment() != nil {
+		for k, v := range user.GetAttachment() {
+			attachment = append(attachment, SchemaAttachment{
+				Type:  "PropertyValue",
+				Name:  k,
+				Value: v,
+			})
+		}
+	}
+
 	return Actor{
 		Context:                   NewContext(ActivityStreamsContext, SecurityContext),
 		Type:                      "Person",
@@ -288,10 +314,18 @@ func ActorFromUser(user Actorish, pubKey identity.SigningKey) (Actor, error) {
 		Icon:                      icon,
 		Discoverable:              true,
 		ManuallyApprovesFollowers: false,
+		Attachment:                attachment,
 		PublicKey: PublicKey{
 			ID:           ActorPublicKeyID(user),
 			Owner:        ActorID(user),
 			PublicKeyPem: pubKey.PEM,
 		},
 	}, nil
+}
+
+// A SchemaAttachment is a http://schema.org#PropertyValue.
+type SchemaAttachment struct {
+	Type  string `json:"type"`
+	Name  string `json:"name"`
+	Value string `json:"value"`
 }

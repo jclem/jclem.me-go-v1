@@ -206,6 +206,7 @@ const usersUsernameColumn = "username"
 const usersSummaryColumn = "summary"
 const usersNameColumn = "name"
 const usersImageURLColumn = "image_url"
+const usersMetadataColumn = "metadata"
 const usersCreatedAt = "created_at"
 const usersUpdatedAt = "updated_at"
 
@@ -216,20 +217,22 @@ var usersFields = []string{ //nolint:gochecknoglobals
 	usersSummaryColumn,
 	usersNameColumn,
 	usersImageURLColumn,
+	usersMetadataColumn,
 	usersCreatedAt,
 	usersUpdatedAt,
 }
 
 // A User is a user of the system.
 type User struct {
-	ID        int64     `json:"id"`
-	Email     string    `json:"email"`
-	Username  string    `json:"username"`
-	Summary   string    `json:"summary"`
-	Name      string    `json:"name"`
-	ImageURL  string    `json:"image_url"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID        int64             `json:"id"`
+	Email     string            `json:"email"`
+	Username  string            `json:"username"`
+	Summary   string            `json:"summary"`
+	Name      string            `json:"name"`
+	ImageURL  string            `json:"image_url"`
+	Metadata  map[string]string `json:"metadata"`
+	CreatedAt time.Time         `json:"created_at"`
+	UpdatedAt time.Time         `json:"updated_at"`
 }
 
 // GetUsername implements the activitypub.Actorish interface.
@@ -252,6 +255,11 @@ func (u User) GetImageURL() string {
 	return u.ImageURL
 }
 
+// GetAttachment implements the activitypub.Actorish interface.
+func (u User) GetAttachment() map[string]string {
+	return u.Metadata
+}
+
 func (u *User) scannableFields() []any {
 	return []any{
 		&u.ID,
@@ -260,6 +268,7 @@ func (u *User) scannableFields() []any {
 		&u.Summary,
 		&u.Name,
 		&u.ImageURL,
+		&u.Metadata,
 		&u.CreatedAt,
 		&u.UpdatedAt,
 	}
