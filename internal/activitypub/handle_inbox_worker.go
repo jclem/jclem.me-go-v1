@@ -33,12 +33,17 @@ type HandleInboxWorker struct {
 func (w *HandleInboxWorker) Work(ctx context.Context, job *river.Job[HandleInboxArgs]) error {
 	ar, err := w.pub.GetActivityByID(ctx, job.Args.UserRecordID, job.Args.ActivityID)
 	if err != nil {
-		return fmt.Errorf("failed to get activity: %w", err)
+		err = fmt.Errorf("failed to get activity: %w", err)
+		if errors.Is(err, ErrActivityNotFound) {
+			return river.JobCancel(err) //nolint:wrapcheck
+		}
+
+		return err
 	}
 
 	var ao Activity[any]
 	if err := json.Unmarshal(ar.Data, &ao); err != nil {
-		return fmt.Errorf("failed to unmarshal activity data: %w", err)
+		return river.JobCancel(fmt.Errorf("failed to unmarshal activity data: %w", err)) //nolint:wrapcheck
 	}
 
 	switch ao.Type {
@@ -54,13 +59,11 @@ func (w *HandleInboxWorker) Work(ctx context.Context, job *river.Job[HandleInbox
 func (w *HandleInboxWorker) handleFollow(ctx context.Context, userRecordID int64, ar ActivityRecord, ao Activity[any]) error {
 	if err := w.createFollower(ctx, userRecordID, ar, ao.Actor); err != nil {
 		slog.ErrorContext(ctx, "failed to create follower", "error", err)
-
 		return err
 	}
 
 	if err := w.acceptActivity(ctx, userRecordID, ar, ao.Actor); err != nil {
 		slog.ErrorContext(ctx, "failed to accept follower", "error", err)
-
 		return err
 	}
 
@@ -74,21 +77,21 @@ func (w *HandleInboxWorker) handleUndo(ctx context.Context, userRecordID int64, 
 		return fmt.Errorf("failed to marshal object: %w", err)
 	}
 
-	var fa Activity[any]
-	if err := json.Unmarshal(j, &fa); err != nil {
-		return fmt.Errorf("failed to unmarshal follow activity: %w", err)
+	var undoneActivity Activity[any]
+	if err := json.Unmarshal(j, &undoneActivity); err != nil {
+		return river.JobCancel(fmt.Errorf("failed to unmarshal object: %w", err)) //nolint:wrapcheck
 	}
 
 	// Ensure the undo actor and the activity actor are the same.
-	if ao.Actor != fa.Actor {
-		return fmt.Errorf("actor and undo actor are not the same")
+	if ao.Actor != undoneActivity.Actor {
+		return river.JobCancel(fmt.Errorf("actor and undo actor are not the same: %s != %s", ao.Actor, undoneActivity.Actor)) //nolint:wrapcheck
 	}
 
-	if fa.Type != followActivityType {
-		return fmt.Errorf("activity is not a follow")
+	if undoneActivity.Type != followActivityType {
+		return river.JobCancel(fmt.Errorf("activity is not a follow: %s", undoneActivity.Type)) //nolint:wrapcheck
 	}
 
-	if err := w.pub.DeleteFollower(ctx, userRecordID, fa.Actor); err != nil {
+	if err := w.pub.DeleteFollower(ctx, userRecordID, undoneActivity.Actor); err != nil {
 		return fmt.Errorf("failed to delete follower: %w", err)
 	}
 
@@ -101,15 +104,13 @@ func (w *HandleInboxWorker) handleUndo(ctx context.Context, userRecordID int64, 
 
 func (w *HandleInboxWorker) createFollower(ctx context.Context, userRecordID int64, activity ActivityRecord, actorID string) error {
 	if activity.Type != followActivityType {
-		return fmt.Errorf("activity is not a follow")
+		return river.JobCancel(fmt.Errorf("activity is not a follow: %s", activity.Type)) //nolint:wrapcheck
 	}
 
-	follower, err := w.pub.CreateFollower(ctx, userRecordID, actorID, activity.ID)
+	_, err := w.pub.CreateFollower(ctx, userRecordID, actorID, activity.ID)
 	if err != nil {
 		return fmt.Errorf("failed to create follower: %w", err)
 	}
-
-	slog.InfoContext(ctx, "created follower", "id", follower.ActorID)
 
 	return nil
 }
@@ -117,7 +118,12 @@ func (w *HandleInboxWorker) createFollower(ctx context.Context, userRecordID int
 func (w *HandleInboxWorker) acceptActivity(ctx context.Context, userRecordID int64, activity ActivityRecord, actorID string) error {
 	user, err := w.id.GetUserByID(ctx, userRecordID)
 	if err != nil {
-		return fmt.Errorf("failed to get user: %w", err)
+		err = fmt.Errorf("failed to get user: %w", err)
+		if errors.Is(err, identity.ErrUserNotFound) {
+			return river.JobCancel(err) //nolint:wrapcheck
+		}
+
+		return err
 	}
 
 	actor, err := GetActor(ctx, actorID)
@@ -127,7 +133,7 @@ func (w *HandleInboxWorker) acceptActivity(ctx context.Context, userRecordID int
 
 	inboxURL := actor.Inbox
 	if inboxURL == "" {
-		return errors.New("actor has no inbox")
+		return river.JobCancel(fmt.Errorf("actor has no inbox: %s", actor.ID)) //nolint:wrapcheck
 	}
 
 	accept := newAcceptActivity(ActorID(user), activity.ID)
@@ -154,7 +160,11 @@ func (w *HandleInboxWorker) acceptActivity(ctx context.Context, userRecordID int
 	}()
 
 	if !(200 <= resp.StatusCode && resp.StatusCode < 300) {
-		return fmt.Errorf("error posting accept: %s", resp.Status)
+		if resp.StatusCode >= 500 {
+			return fmt.Errorf("error posting accept: %s", resp.Status)
+		}
+
+		return river.JobCancel(fmt.Errorf("error posting accept: %s", resp.Status)) //nolint:wrapcheck
 	}
 
 	return nil

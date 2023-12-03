@@ -40,11 +40,12 @@ type HandleOutboxWorker struct {
 func (w *HandleOutboxWorker) Work(ctx context.Context, job *river.Job[HandleOutboxArgs]) error { //nolint:cyclop
 	activity, err := w.pub.GetActivityByID(ctx, job.Args.UserRecordID, job.Args.ActivityID)
 	if err != nil {
+		err = fmt.Errorf("failed to get activity: %w", err)
 		if errors.Is(err, ErrActivityNotFound) {
-			return river.JobCancel(fmt.Errorf("activity not found: %s", job.Args.ActivityID)) //nolint:wrapcheck
+			return river.JobCancel(err) //nolint:wrapcheck
 		}
 
-		return fmt.Errorf("failed to get activity: %w", err)
+		return err
 	}
 
 	var a Activity[any]
@@ -58,7 +59,7 @@ func (w *HandleOutboxWorker) Work(ctx context.Context, job *river.Job[HandleOutb
 	}
 
 	if actor.Inbox == "" {
-		return river.JobCancel(fmt.Errorf("follower has no inbox: %s", actor.ID)) //nolint:wrapcheck
+		return river.JobCancel(fmt.Errorf("actor has no inbox: %s", actor.ID)) //nolint:wrapcheck
 	}
 
 	j, err := json.Marshal(a)
@@ -83,11 +84,11 @@ func (w *HandleOutboxWorker) Work(ctx context.Context, job *river.Job[HandleOutb
 	}()
 
 	if !(200 <= resp.StatusCode && resp.StatusCode < 300) {
-		if resp.StatusCode == http.StatusUnauthorized {
-			return river.JobCancel(errors.New("received HTTP 401 Unauthorized")) //nolint:wrapcheck
+		if resp.StatusCode >= 500 {
+			return fmt.Errorf("error posting accept: %s", resp.Status)
 		}
 
-		return fmt.Errorf("error posting activity: %s", resp.Status)
+		return river.JobCancel(fmt.Errorf("error posting accept: %s", resp.Status)) //nolint:wrapcheck
 	}
 
 	return nil
