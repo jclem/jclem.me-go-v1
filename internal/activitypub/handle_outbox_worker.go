@@ -83,6 +83,10 @@ func (w *HandleOutboxWorker) Work(ctx context.Context, job *river.Job[HandleOutb
 	}()
 
 	if !(200 <= resp.StatusCode && resp.StatusCode < 300) {
+		if resp.StatusCode == http.StatusUnauthorized {
+			return river.JobCancel(errors.New("received HTTP 401 Unauthorized")) //nolint:wrapcheck
+		}
+
 		return fmt.Errorf("error posting activity: %s", resp.Status)
 	}
 
