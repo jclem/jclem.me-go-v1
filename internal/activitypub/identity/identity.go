@@ -223,6 +223,11 @@ type User struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// GetUsername implements the activitypub.Actorish interface.
+func (u User) GetUsername() string {
+	return u.Username
+}
+
 func (u *User) scannableFields() []any {
 	return []any{
 		&u.ID,

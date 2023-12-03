@@ -14,6 +14,7 @@ const ContentType = "application/activity+json; charset=utf-8"
 // Domain is the domain of the server.
 const Domain = "pub.jclem.me"
 
+// GetActor requests an actor by their ID.
 func GetActor(ctx context.Context, actorID string) (Actor, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, actorID, nil)
 	if err != nil {

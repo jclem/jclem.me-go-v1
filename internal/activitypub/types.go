@@ -142,11 +142,20 @@ type Activity[T any] struct {
 	Context   Context  `json:"@context"`
 	Type      string   `json:"type"`
 	ID        string   `json:"id"`
-	Actor     string   `json:"actor"`
-	Object    T        `json:"object"`
-	Published string   `json:"published"`
-	To        []string `json:"to"`
-	Cc        []string `json:"cc"`
+	Actor     string   `json:"actor,omitempty"`
+	Object    T        `json:"object,omitempty"`
+	Published string   `json:"published,omitempty"`
+	To        []string `json:"to,omitempty"`
+	Cc        []string `json:"cc,omitempty"`
+}
+
+func newAcceptActivity(actorID string, activityID string) Activity[string] {
+	return Activity[string]{
+		Context: NewContext(ActivityStreamsContext),
+		Type:    "Accept",
+		Actor:   actorID,
+		Object:  activityID,
+	}
 }
 
 // A Note is an ActivityStreams Note.
@@ -164,18 +173,54 @@ type Note struct {
 	Cc           []string `json:"cc"`
 }
 
+// An Actorish is an interface for types that can be actors (they have
+// usernames).
+type Actorish interface {
+	GetUsername() string
+}
+
+// ActorID gets the ID of the actor.
+func ActorID(actor Actorish) string {
+	return fmt.Sprintf("https://%s/~%s", Domain, actor.GetUsername())
+}
+
+// ActorOutbox gets the outbox of the actor.
+func ActorOutbox(actor Actorish) string {
+	return fmt.Sprintf("https://%s/~%s/outbox", Domain, actor.GetUsername())
+}
+
+// ActorFollowers gets the followers collection of the actor.
+func ActorFollowers(actor Actorish) string {
+	return fmt.Sprintf("https://%s/~%s/followers", Domain, actor.GetUsername())
+}
+
+// ActorFollowing gets the following collection of the actor.
+func ActorFollowing(actor Actorish) string {
+	return fmt.Sprintf("https://%s/~%s/following", Domain, actor.GetUsername())
+}
+
+// ActorInbox gets the inbox of the actor.
+func ActorInbox(actor Actorish) string {
+	return fmt.Sprintf("https://%s/~%s/inbox", Domain, actor.GetUsername())
+}
+
+// ActorPublicKeyID gets the ID of the public key of the actor.
+func ActorPublicKeyID(actor Actorish) string {
+	return ActorID(actor) + "#main-key"
+}
+
 // ActorFromUser gets an actor from a system user.
-func ActorFromUser(user identity.User, pubKey identity.SigningKey) (Actor, error) {
-	username := user.Username
+func ActorFromUser(user Actorish, pubKey identity.SigningKey) (Actor, error) {
+	username := user.GetUsername()
 
 	return Actor{
 		Context:           NewContext(ActivityStreamsContext, SecurityContext),
 		Type:              "Person",
-		ID:                fmt.Sprintf("https://%s/~%s", Domain, username),
-		Inbox:             fmt.Sprintf("https://%s/~%s/inbox", Domain, username),
-		Outbox:            fmt.Sprintf("https://%s/~%s/outbox", Domain, username),
-		Followers:         fmt.Sprintf("https://%s/~%s/followers", Domain, username),
-		Following:         fmt.Sprintf("https://%s/~%s/following", Domain, username),
+		ID:                ActorID(user),
+		Inbox:             ActorInbox(user),
+		Outbox:            ActorOutbox(user),
+		Followers:         ActorFollowers(user),
+		Following:         ActorFollowing(user),
 		PreferredUsername: username,
 		Name:              "Jonathan Clem",
 		Summary:           "A person that enjoys helping build things on the internet",
@@ -186,8 +231,8 @@ func ActorFromUser(user identity.User, pubKey identity.SigningKey) (Actor, error
 			URL:     "https://jclem.nyc3.cdn.digitaloceanspaces.com/profile/profile-1024.webp",
 		},
 		PublicKey: PublicKey{
-			ID:           fmt.Sprintf("https://%s/~%s#main-key", Domain, username),
-			Owner:        fmt.Sprintf("https://%s/~%s", Domain, username),
+			ID:           ActorPublicKeyID(user),
+			Owner:        ActorID(user),
 			PublicKeyPem: pubKey.PEM,
 		},
 	}, nil

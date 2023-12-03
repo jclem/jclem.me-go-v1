@@ -77,20 +77,6 @@ func (p *pubRouter) userRouter() chi.Router { //nolint:ireturn
 func (p *pubRouter) createActivity(w http.ResponseWriter, r *http.Request) {
 	user := r.Context().Value(userContextKey).(identity.User) //nolint:forceTypeAssert
 
-	pubKey, err := p.id.GetPublicKey(r.Context(), user.ID)
-	if err != nil {
-		returnError(r.Context(), w, err, "error getting public key")
-
-		return
-	}
-
-	actor, err := ap.ActorFromUser(user, pubKey)
-	if err != nil {
-		returnError(r.Context(), w, err, "error getting user")
-
-		return
-	}
-
 	var note ap.Note
 	if err := json.NewDecoder(r.Body).Decode(&note); err != nil {
 		returnError(r.Context(), w, err, "error decoding note")
@@ -111,18 +97,18 @@ func (p *pubRouter) createActivity(w http.ResponseWriter, r *http.Request) {
 	}
 
 	note.Context = ap.NewContext(ap.ActivityStreamsContext, ap.MastodonContext)
-	note.ID = fmt.Sprintf("%s/notes/%s", actor.ID, uuid.New())
-	note.AttributedTo = actor.ID
+	note.ID = fmt.Sprintf("%s/notes/%s", ap.ActorID(user), uuid.New())
+	note.AttributedTo = ap.ActorID(user)
 	note.Type = "Note"
 	note.Published = time.Now().UTC().Format(http.TimeFormat)
 	note.To = []string{ap.ActivityStreamsContext + "#Public"}
-	note.Cc = []string{actor.Followers}
+	note.Cc = []string{ap.ActorFollowers(user)}
 
 	activity := ap.Activity[ap.Note]{
 		Context:   ap.NewContext(ap.ActivityStreamsContext),
 		Type:      "Create",
-		ID:        fmt.Sprintf("%s/outbox/%s", actor.ID, uuid.New()),
-		Actor:     actor.ID,
+		ID:        fmt.Sprintf("%s/outbox/%s", ap.ActorID(user), uuid.New()),
+		Actor:     ap.ActorID(user),
 		Object:    note,
 		Published: note.Published,
 		To:        note.To,
@@ -194,20 +180,7 @@ func (p *pubRouter) acceptActivity(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *pubRouter) getUser(w http.ResponseWriter, r *http.Request) {
-	username := chi.URLParam(r, "username")
-
-	user, err := p.id.GetUserByUsername(r.Context(), username)
-	if err != nil {
-		if errors.Is(err, identity.ErrUserNotFound) {
-			returnCodeError(r.Context(), w, http.StatusNotFound, fmt.Sprintf("user not found: %q", username))
-
-			return
-		}
-
-		returnError(r.Context(), w, err, "error getting user")
-
-		return
-	}
+	user := r.Context().Value(userContextKey).(identity.User) //nolint:forceTypeAssert
 
 	pubKey, err := p.id.GetPublicKey(r.Context(), user.ID)
 	if err != nil {
@@ -218,7 +191,7 @@ func (p *pubRouter) getUser(w http.ResponseWriter, r *http.Request) {
 
 	actor, err := ap.ActorFromUser(user, pubKey)
 	if err != nil {
-		returnCodeError(r.Context(), w, http.StatusNotFound, fmt.Sprintf("user not found: %q", username))
+		returnCodeError(r.Context(), w, http.StatusNotFound, fmt.Sprintf("user not found: %q", user.Username))
 
 		return
 	}
@@ -237,20 +210,6 @@ func (p *pubRouter) getNote(w http.ResponseWriter, r *http.Request) {
 
 func (p *pubRouter) getOutbox(w http.ResponseWriter, r *http.Request) {
 	user := r.Context().Value(userContextKey).(identity.User) //nolint:forceTypeAssert
-
-	pubKey, err := p.id.GetPublicKey(r.Context(), user.ID)
-	if err != nil {
-		returnError(r.Context(), w, err, "error getting public key")
-
-		return
-	}
-
-	actor, err := ap.ActorFromUser(user, pubKey)
-	if err != nil {
-		returnError(r.Context(), w, err, "error getting AP user")
-
-		return
-	}
 
 	items, err := p.pub.ListPublicOutbox(r.Context(), user.ID)
 	if err != nil {
@@ -272,7 +231,7 @@ func (p *pubRouter) getOutbox(w http.ResponseWriter, r *http.Request) {
 		itemObjects = append(itemObjects, itemObject)
 	}
 
-	collection := ap.NewCollection(actor.Outbox, itemObjects)
+	collection := ap.NewCollection(ap.ActorOutbox(user), itemObjects)
 	if err := json.NewEncoder(w).Encode(collection); err != nil {
 		returnError(r.Context(), w, err, "error encoding actor")
 
@@ -295,21 +254,7 @@ func (p *pubRouter) listFollowers(w http.ResponseWriter, r *http.Request) {
 		followerIDs = append(followerIDs, follower.ActorID)
 	}
 
-	pubKey, err := p.id.GetPublicKey(r.Context(), user.ID)
-	if err != nil {
-		returnError(r.Context(), w, err, "error getting public key")
-
-		return
-	}
-
-	actor, err := ap.ActorFromUser(user, pubKey)
-	if err != nil {
-		returnError(r.Context(), w, err, "error getting AP user")
-
-		return
-	}
-
-	collection := ap.NewCollection(actor.Followers, followerIDs)
+	collection := ap.NewCollection(ap.ActorFollowers(user), followerIDs)
 	if err := json.NewEncoder(w).Encode(collection); err != nil {
 		returnError(r.Context(), w, err, "error encoding collection")
 
@@ -318,37 +263,9 @@ func (p *pubRouter) listFollowers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *pubRouter) listFollowing(w http.ResponseWriter, r *http.Request) {
-	username := chi.URLParam(r, "username")
+	user := r.Context().Value(userContextKey).(identity.User) //nolint:forceTypeAssert
 
-	user, err := p.id.GetUserByUsername(r.Context(), username)
-	if err != nil {
-		if errors.Is(err, identity.ErrUserNotFound) {
-			returnCodeError(r.Context(), w, http.StatusNotFound, fmt.Sprintf("user not found: %q", username))
-
-			return
-		}
-
-		returnError(r.Context(), w, err, "error getting user")
-
-		return
-	}
-
-	pubKey, err := p.id.GetPublicKey(r.Context(), user.ID)
-	if err != nil {
-		returnError(r.Context(), w, err, "error getting public key")
-
-		return
-	}
-
-	actor, err := ap.ActorFromUser(user, pubKey)
-
-	if err != nil {
-		returnCodeError(r.Context(), w, http.StatusNotFound, fmt.Sprintf("user not found: %q", username))
-
-		return
-	}
-
-	collection := ap.NewCollection(actor.Following, []string{})
+	collection := ap.NewCollection(ap.ActorFollowing(user), []string{})
 	if err := json.NewEncoder(w).Encode(collection); err != nil {
 		returnError(r.Context(), w, err, "error encoding collection")
 
@@ -394,28 +311,14 @@ func (p *pubRouter) handleWebfinger(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pubKey, err := p.id.GetPublicKey(r.Context(), user.ID)
-	if err != nil {
-		returnError(r.Context(), w, err, "error getting public key")
-
-		return
-	}
-
-	actor, err := ap.ActorFromUser(user, pubKey)
-	if err != nil {
-		returnCodeError(r.Context(), w, http.StatusNotFound, fmt.Sprintf("user not found: %q", username))
-
-		return
-	}
-
 	if err := json.NewEncoder(w).Encode(webfinger.JRD{
 		Subject: resource,
-		Aliases: []string{actor.ID},
+		Aliases: []string{ap.ActorID(user)},
 		Links: []webfinger.Link{
 			{
 				Rel:  "self",
 				Type: ap.ContentType,
-				Href: actor.ID,
+				Href: ap.ActorID(user),
 			},
 		},
 	}); err != nil {

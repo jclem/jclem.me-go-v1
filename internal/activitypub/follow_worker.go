@@ -66,10 +66,18 @@ func (w *HandleFollowWorker) Work(ctx context.Context, job *river.Job[HandleFoll
 	}
 
 	if err := w.createFollower(ctx, job.Args.UserRecordID, activity, actorID); err != nil {
+		slog.ErrorContext(ctx, "failed to create follower", "error", err)
+
 		return err
 	}
 
-	return w.acceptFollower(ctx, job.Args.UserRecordID, activity, actorID)
+	if err := w.acceptFollower(ctx, job.Args.UserRecordID, activity, actorID); err != nil {
+		slog.ErrorContext(ctx, "failed to accept follower", "error", err)
+
+		return err
+	}
+
+	return nil
 }
 
 func (w *HandleFollowWorker) createFollower(ctx context.Context, userRecordID int64, activity ActivityRecord, actorID string) error {
@@ -87,52 +95,27 @@ func (w *HandleFollowWorker) createFollower(ctx context.Context, userRecordID in
 	return nil
 }
 
-type acceptActivity struct {
-	Context string `json:"@context"`
-	Type    string `json:"type"`
-	Actor   string `json:"actor"`
-	Object  string `json:"object"`
-}
-
-func (w *HandleFollowWorker) acceptFollower(ctx context.Context, userRecordID int64, activity ActivityRecord, actorID string) error {
+func (w *HandleFollowWorker) acceptFollower(ctx context.Context, userRecordID int64, activity ActivityRecord, actorID string) error { //nolint:cyclop
 	user, err := w.id.GetUserByID(ctx, userRecordID)
 	if err != nil {
 		return fmt.Errorf("failed to get user: %w", err)
 	}
 
-	pubKey, err := w.id.GetPublicKey(ctx, userRecordID)
+	followerActor, err := GetActor(ctx, actorID)
 	if err != nil {
-		return fmt.Errorf("failed to get public key: %w", err)
+		return fmt.Errorf("error getting actor: %w", err)
 	}
 
-	apuser, err := ActorFromUser(user, pubKey)
-	if err != nil {
-		return fmt.Errorf("failed to get actor: %w", err)
+	inboxURL := followerActor.Inbox
+	if inboxURL == "" {
+		return errors.New("actor has no inbox")
 	}
 
-	// Post an accept to the actor.
-	accept := acceptActivity{
-		Context: ActivityStreamsContext,
-		Type:    "Accept",
-		Actor:   apuser.ID,
-		Object:  activity.ID,
-	}
+	accept := newAcceptActivity(ActorID(user), activity.ID)
 
 	j, err := json.Marshal(accept)
 	if err != nil {
 		return fmt.Errorf("failed to marshal accept: %w", err)
-	}
-
-	actor, err := GetActor(ctx, actorID)
-	if err != nil {
-		slog.ErrorContext(ctx, "error getting actor", "error", err)
-
-		return fmt.Errorf("error getting actor: %w", err)
-	}
-
-	inboxURL := actor.Inbox
-	if inboxURL == "" {
-		return errors.New("actor has no inbox")
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, inboxURL, bytes.NewReader(j))
@@ -140,8 +123,8 @@ func (w *HandleFollowWorker) acceptFollower(ctx context.Context, userRecordID in
 		return fmt.Errorf("error creating accept request: %w", err)
 	}
 
-	req.Header.Set("Content-Type", "application/activity+json")
-	req.Header.Set("Accept", "application/activity+json")
+	req.Header.Set("Content-Type", ContentType)
+	req.Header.Set("Accept", ContentType)
 	req.Header.Set("Date", time.Now().UTC().Format(http.TimeFormat))
 
 	pk, err := w.id.GetPrivateKey(ctx, userRecordID)
@@ -149,7 +132,7 @@ func (w *HandleFollowWorker) acceptFollower(ctx context.Context, userRecordID in
 		return fmt.Errorf("error getting private key: %w", err)
 	}
 
-	if err := signJSONLDRequest(pk, apuser, req, j); err != nil {
+	if err := signJSONLDRequest(user, pk, req, j); err != nil {
 		return fmt.Errorf("error signing accept request: %w", err)
 	}
 
@@ -164,7 +147,7 @@ func (w *HandleFollowWorker) acceptFollower(ctx context.Context, userRecordID in
 		}
 	}()
 
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+	if !(200 <= resp.StatusCode && resp.StatusCode < 300) {
 		return fmt.Errorf("error posting accept: %s", resp.Status)
 	}
 
@@ -178,7 +161,7 @@ func newHandleFollowWorker(pub *Service, id *identity.Service) *HandleFollowWork
 	}
 }
 
-func signJSONLDRequest(privateKeyPEM identity.SigningKey, u Actor, r *http.Request, b []byte) error {
+func signJSONLDRequest(user identity.User, privateKeyPEM identity.SigningKey, r *http.Request, b []byte) error {
 	prefs := []httpsig.Algorithm{httpsig.RSA_SHA256}
 	digestAlgo := httpsig.DigestSha256
 	headers := []string{httpsig.RequestTarget, "date", "digest"}
@@ -203,7 +186,7 @@ func signJSONLDRequest(privateKeyPEM identity.SigningKey, u Actor, r *http.Reque
 		return errors.New("private key is not an RSA key")
 	}
 
-	if err := signer.SignRequest(rsaKey, u.PublicKey.ID, r, b); err != nil {
+	if err := signer.SignRequest(rsaKey, ActorPublicKeyID(user), r, b); err != nil {
 		return fmt.Errorf("error signing request: %w", err)
 	}
 
