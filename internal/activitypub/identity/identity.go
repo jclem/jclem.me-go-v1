@@ -203,6 +203,9 @@ const usersTable = "users"
 const usersIDColumn = "id"
 const usersEmailColumn = "email"
 const usersUsernameColumn = "username"
+const usersSummaryColumn = "summary"
+const usersNameColumn = "name"
+const usersImageURLColumn = "image_url"
 const usersCreatedAt = "created_at"
 const usersUpdatedAt = "updated_at"
 
@@ -210,6 +213,9 @@ var usersFields = []string{ //nolint:gochecknoglobals
 	usersIDColumn,
 	usersEmailColumn,
 	usersUsernameColumn,
+	usersSummaryColumn,
+	usersNameColumn,
+	usersImageURLColumn,
 	usersCreatedAt,
 	usersUpdatedAt,
 }
@@ -219,6 +225,9 @@ type User struct {
 	ID        int64     `json:"id"`
 	Email     string    `json:"email"`
 	Username  string    `json:"username"`
+	Summary   string    `json:"summary"`
+	Name      string    `json:"name"`
+	ImageURL  string    `json:"image_url"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -228,11 +237,29 @@ func (u User) GetUsername() string {
 	return u.Username
 }
 
+// GetSummary implements the activitypub.Actorish interface.
+func (u User) GetSummary() string {
+	return u.Summary
+}
+
+// GetName implements the activitypub.Actorish interface.
+func (u User) GetName() string {
+	return u.Name
+}
+
+// GetImageURL implements the activitypub.Actorish interface.
+func (u User) GetImageURL() string {
+	return u.ImageURL
+}
+
 func (u *User) scannableFields() []any {
 	return []any{
 		&u.ID,
 		&u.Email,
 		&u.Username,
+		&u.Summary,
+		&u.Name,
+		&u.ImageURL,
 		&u.CreatedAt,
 		&u.UpdatedAt,
 	}

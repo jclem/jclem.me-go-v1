@@ -221,6 +221,9 @@ type Actor struct {
 // An Actorish is an interface for types that can be actors (they have
 // usernames).
 type Actorish interface {
+	GetName() string
+	GetImageURL() string
+	GetSummary() string
 	GetUsername() string
 }
 
@@ -258,6 +261,16 @@ func ActorPublicKeyID(actor Actorish) string {
 func ActorFromUser(user Actorish, pubKey identity.SigningKey) (Actor, error) {
 	username := user.GetUsername()
 
+	var icon Image
+	if user.GetImageURL() != "" {
+		icon = Image{
+			Context: NewContext(ActivityStreamsContext),
+			Type:    "Image",
+			Name:    "Photograph of @" + username,
+			URL:     user.GetImageURL(),
+		}
+	}
+
 	return Actor{
 		Context:           NewContext(ActivityStreamsContext, SecurityContext),
 		Type:              "Person",
@@ -267,14 +280,9 @@ func ActorFromUser(user Actorish, pubKey identity.SigningKey) (Actor, error) {
 		Followers:         ActorFollowers(user),
 		Following:         ActorFollowing(user),
 		PreferredUsername: username,
-		Name:              "Jonathan Clem",
-		Summary:           "A person that enjoys helping build things on the internet",
-		Icon: Image{
-			Context: NewContext(ActivityStreamsContext),
-			Type:    "Image",
-			Name:    "Photograph of Jonathan Clem",
-			URL:     "https://jclem.nyc3.cdn.digitaloceanspaces.com/profile/profile-1024.webp",
-		},
+		Name:              user.GetName(),
+		Summary:           user.GetSummary(),
+		Icon:              icon,
 		PublicKey: PublicKey{
 			ID:           ActorPublicKeyID(user),
 			Owner:        ActorID(user),
