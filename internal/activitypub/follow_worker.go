@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/go-fed/httpsig"
+	"github.com/jclem/jclem.me/internal/activitypub/identity"
 	"github.com/jclem/jclem.me/internal/www/config"
 	"github.com/riverqueue/river"
 )
@@ -21,6 +22,9 @@ import (
 type HandleFollowArgs struct {
 	// ActivityID is the *object* ID of the activity.
 	ActivityID string `json:"activity_id"`
+
+	// UserRecordID is the ID of the user that the activity is for.
+	UserRecordID int64 `json:"user_record_id"`
 }
 
 func (a HandleFollowArgs) Kind() string {
@@ -30,10 +34,11 @@ func (a HandleFollowArgs) Kind() string {
 type HandleFollowWorker struct {
 	river.WorkerDefaults[HandleFollowArgs]
 	pub *Service
+	id  *identity.Service
 }
 
 func (w *HandleFollowWorker) Work(ctx context.Context, job *river.Job[HandleFollowArgs]) error {
-	activity, err := w.pub.GetActivityByID(ctx, job.Args.ActivityID)
+	activity, err := w.pub.GetActivityByID(ctx, job.Args.UserRecordID, job.Args.ActivityID)
 	if err != nil {
 		return fmt.Errorf("failed to get activity: %w", err)
 	}
@@ -61,19 +66,19 @@ func (w *HandleFollowWorker) Work(ctx context.Context, job *river.Job[HandleFoll
 		return fmt.Errorf("unexpected actor type: %T", t)
 	}
 
-	if err := w.createFollower(ctx, activity, actorID); err != nil {
+	if err := w.createFollower(ctx, job.Args.UserRecordID, activity, actorID); err != nil {
 		return err
 	}
 
-	return w.acceptFollower(ctx, activity, actorID)
+	return w.acceptFollower(ctx, job.Args.UserRecordID, activity, actorID)
 }
 
-func (w *HandleFollowWorker) createFollower(ctx context.Context, activity ActivityRecord, actorID string) error {
+func (w *HandleFollowWorker) createFollower(ctx context.Context, userRecordID int64, activity ActivityRecord, actorID string) error {
 	if activity.Type != "Follow" {
 		return fmt.Errorf("activity is not a follow")
 	}
 
-	follower, err := w.pub.CreateFollower(ctx, actorID, activity.ID)
+	follower, err := w.pub.CreateFollower(ctx, userRecordID, actorID, activity.ID)
 	if err != nil {
 		return fmt.Errorf("failed to create follower: %w", err)
 	}
@@ -90,14 +95,22 @@ type acceptActivity struct {
 	Object  string `json:"object"`
 }
 
-func (w *HandleFollowWorker) acceptFollower(ctx context.Context, activity ActivityRecord, actorID string) error {
-	me := GetMe()
+func (w *HandleFollowWorker) acceptFollower(ctx context.Context, userRecordID int64, activity ActivityRecord, actorID string) error {
+	user, err := w.id.GetUserByID(ctx, userRecordID)
+	if err != nil {
+		return fmt.Errorf("failed to get user: %w", err)
+	}
+
+	apuser, err := GetUser(user.Username)
+	if err != nil {
+		return fmt.Errorf("failed to get actor: %w", err)
+	}
 
 	// Post an accept to the actor.
 	accept := acceptActivity{
 		Context: ActivityStreamsContext,
 		Type:    "Accept",
-		Actor:   me.ID,
+		Actor:   apuser.ID,
 		Object:  activity.ID,
 	}
 
@@ -127,7 +140,7 @@ func (w *HandleFollowWorker) acceptFollower(ctx context.Context, activity Activi
 	req.Header.Set("Accept", "application/activity+json")
 	req.Header.Set("Date", time.Now().UTC().Format(http.TimeFormat))
 
-	if err := signJSONLDRequest(me, req, j); err != nil {
+	if err := signJSONLDRequest(apuser, req, j); err != nil {
 		return fmt.Errorf("error signing accept request: %w", err)
 	}
 
@@ -149,8 +162,9 @@ func (w *HandleFollowWorker) acceptFollower(ctx context.Context, activity Activi
 	return nil
 }
 
-func newHandleFollowWorker(pub *Service) *HandleFollowWorker {
+func newHandleFollowWorker(pub *Service, id *identity.Service) *HandleFollowWorker {
 	return &HandleFollowWorker{
+		id:  id,
 		pub: pub,
 	}
 }

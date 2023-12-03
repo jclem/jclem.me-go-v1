@@ -166,16 +166,6 @@ type Note struct {
 
 const me = "jclem"
 
-// GetMe gets the actor Jonathan Clem :).
-func GetMe() Actor {
-	p, err := GetUser(me)
-	if err != nil {
-		panic(err)
-	}
-
-	return p
-}
-
 // GetUser gets an actor by username.
 func GetUser(username string) (Actor, error) {
 	if username != me {

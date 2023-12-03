@@ -12,6 +12,7 @@ import (
 	"github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jclem/jclem.me/internal/activitypub/identity"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 )
@@ -35,7 +36,7 @@ const (
 )
 
 // CreateInboxActivity creates a new ActivityPub activity record.
-func (s *Service) CreateActivity(ctx context.Context, mailbox Mailbox, context, typ, id string, data []byte) (a ActivityRecord, err error) {
+func (s *Service) CreateActivity(ctx context.Context, userRecordID int64, mailbox Mailbox, context, typ, id string, data []byte) (a ActivityRecord, err error) {
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return ActivityRecord{}, fmt.Errorf("failed to begin transaction: %w", err)
@@ -52,7 +53,7 @@ func (s *Service) CreateActivity(ctx context.Context, mailbox Mailbox, context, 
 	query, args, err := s.sql.
 		Insert(activitiesTable).
 		Columns(activitiesFieldsWritable...).
-		Values(mailbox, context, typ, id, data, now, now).
+		Values(userRecordID, mailbox, context, typ, id, data, now, now).
 		Suffix("RETURNING " + strings.Join(activitiesFields, ", ")).
 		ToSql()
 	if err != nil {
@@ -65,11 +66,11 @@ func (s *Service) CreateActivity(ctx context.Context, mailbox Mailbox, context, 
 
 	switch a.Type {
 	case "Follow":
-		if _, err := s.river.InsertTx(ctx, tx, HandleFollowArgs{ActivityID: a.ID}, nil); err != nil {
+		if _, err := s.river.InsertTx(ctx, tx, HandleFollowArgs{UserRecordID: userRecordID, ActivityID: a.ID}, nil); err != nil {
 			return ActivityRecord{}, fmt.Errorf("failed to insert follow job: %w", err)
 		}
 	case "Create":
-		if _, err := s.river.InsertTx(ctx, tx, HandleCreateArgs{ActivityID: a.ID}, nil); err != nil {
+		if _, err := s.river.InsertTx(ctx, tx, HandleCreateArgs{UserRecordID: userRecordID, ActivityID: a.ID}, nil); err != nil {
 			return ActivityRecord{}, fmt.Errorf("failed to insert create job: %w", err)
 		}
 	}
@@ -78,10 +79,11 @@ func (s *Service) CreateActivity(ctx context.Context, mailbox Mailbox, context, 
 }
 
 // GetActivityByID gets an activity by its object ID.
-func (s *Service) GetActivityByID(ctx context.Context, id string) (ActivityRecord, error) {
+func (s *Service) GetActivityByID(ctx context.Context, userRecordID int64, id string) (ActivityRecord, error) {
 	query, args, err := s.sql.
 		Select(activitiesFields...).
 		From(activitiesTable).
+		Where(squirrel.Eq{activitiesUserIDColumn: userRecordID}).
 		Where(squirrel.Eq{activitiesIDColumn: id}).
 		ToSql()
 	if err != nil {
@@ -97,7 +99,7 @@ func (s *Service) GetActivityByID(ctx context.Context, id string) (ActivityRecor
 }
 
 // CreateFollower creates a new follower record.
-func (s *Service) CreateFollower(ctx context.Context, actorID, activityID string) (FollowerRecord, error) {
+func (s *Service) CreateFollower(ctx context.Context, userRecordID int64, actorID, activityID string) (FollowerRecord, error) {
 	now := time.Now().UTC()
 
 	var f FollowerRecord
@@ -105,7 +107,7 @@ func (s *Service) CreateFollower(ctx context.Context, actorID, activityID string
 	query, args, err := s.sql.
 		Insert(followersTable).
 		Columns(followersFieldsWritable...).
-		Values(actorID, activityID, now, now).
+		Values(userRecordID, actorID, activityID, now, now).
 		Suffix("RETURNING " + strings.Join(followersFields, ", ")).
 		ToSql()
 	if err != nil {
@@ -120,10 +122,11 @@ func (s *Service) CreateFollower(ctx context.Context, actorID, activityID string
 }
 
 // ListPublicOutbox lists all public outbox activity.
-func (s *Service) ListPublicOutbox(ctx context.Context) ([]ActivityRecord, error) {
+func (s *Service) ListPublicOutbox(ctx context.Context, userRecordID int64) ([]ActivityRecord, error) {
 	query, args, err := s.sql.
 		Select(activitiesFields...).
 		From(activitiesTable).
+		Where(squirrel.Eq{activitiesUserIDColumn: userRecordID}).
 		Where(squirrel.Eq{activitiesMailboxColumn: Outbox}).
 		Where(squirrel.Eq{activitiesTypeColumn: "Create"}).
 		ToSql()
@@ -176,10 +179,11 @@ func (s *Service) ListPublicOutbox(ctx context.Context) ([]ActivityRecord, error
 }
 
 // ListFollowers lists all followers.
-func (s *Service) ListFollowers(ctx context.Context) ([]FollowerRecord, error) {
+func (s *Service) ListFollowers(ctx context.Context, userRecordID int64) ([]FollowerRecord, error) {
 	query, args, err := s.sql.
 		Select(followersFields...).
 		From(followersTable).
+		Where(squirrel.Eq{followersUserIDColumn: userRecordID}).
 		ToSql()
 	if err != nil {
 		return nil, fmt.Errorf("failed to build query: %w", err)
@@ -209,7 +213,7 @@ func (s *Service) ListFollowers(ctx context.Context) ([]FollowerRecord, error) {
 }
 
 // CreateNote creates a new note record.
-func (s *Service) CreateNote(ctx context.Context, activityID string, note Note) (NoteRecord, error) {
+func (s *Service) CreateNote(ctx context.Context, userRecordID int64, activityID string, note Note) (NoteRecord, error) {
 	now := time.Now().UTC()
 
 	var n NoteRecord
@@ -217,7 +221,7 @@ func (s *Service) CreateNote(ctx context.Context, activityID string, note Note) 
 	query, args, err := s.sql.
 		Insert(notesTable).
 		Columns(notesFieldsWritable...).
-		Values(activityID, note.ID, note.Content, note.Published, note.To, note.Cc, now, now).
+		Values(userRecordID, activityID, note.ID, note.Content, note.Published, note.To, note.Cc, now, now).
 		Suffix("RETURNING " + strings.Join(notesFields, ", ")).
 		ToSql()
 	if err != nil {
@@ -232,19 +236,14 @@ func (s *Service) CreateNote(ctx context.Context, activityID string, note Note) 
 }
 
 // NewService creates a new Service.
-func NewService(ctx context.Context, connString string) (*Service, error) {
-	pool, err := pgxpool.New(ctx, connString)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to database: %w", err)
-	}
-
+func NewService(ctx context.Context, pool *pgxpool.Pool, id *identity.Service) (*Service, error) {
 	s := Service{
 		pool: pool,
 		sql:  squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar),
 	}
 
 	workers := river.NewWorkers()
-	if err := river.AddWorkerSafely(workers, newHandleFollowWorker(&s)); err != nil {
+	if err := river.AddWorkerSafely(workers, newHandleFollowWorker(&s, id)); err != nil {
 		return nil, fmt.Errorf("failed to add worker: %w", err)
 	}
 
@@ -273,6 +272,7 @@ func NewService(ctx context.Context, connString string) (*Service, error) {
 
 const activitiesTable = "activities"
 const activitiesRecordIDColumn = "id"
+const activitiesUserIDColumn = "user_id"
 const activitiesMailboxColumn = "mailbox"
 const activitiesContextColumn = "activity_context"
 const activitiesTypeColumn = "activity_type"
@@ -283,6 +283,7 @@ const activitiesUpdatedAtColumn = "updated_at"
 
 var activitiesFields = []string{ //nolint:gochecknoglobals
 	activitiesRecordIDColumn,
+	activitiesUserIDColumn,
 	activitiesMailboxColumn,
 	activitiesContextColumn,
 	activitiesTypeColumn,
@@ -292,6 +293,7 @@ var activitiesFields = []string{ //nolint:gochecknoglobals
 	activitiesUpdatedAtColumn}
 
 var activitiesFieldsWritable = []string{ //nolint:gochecknoglobals
+	activitiesUserIDColumn,
 	activitiesMailboxColumn,
 	activitiesContextColumn,
 	activitiesTypeColumn,
@@ -304,6 +306,7 @@ var activitiesFieldsWritable = []string{ //nolint:gochecknoglobals
 // SEE: https://www.w3.org/TR/activitystreams-vocabulary/#dfn-activity
 type ActivityRecord struct {
 	RecordID  int64     `json:"record_id"`
+	UserID    int64     `json:"user_id"`
 	Mailbox   Mailbox   `json:"mailbox"`
 	Context   string    `json:"@context"`
 	Type      string    `json:"type"`
@@ -316,6 +319,7 @@ type ActivityRecord struct {
 func (a *ActivityRecord) scannableFields() []any {
 	return []any{
 		&a.RecordID,
+		&a.UserID,
 		&a.Mailbox,
 		&a.Context,
 		&a.Type,
@@ -337,6 +341,7 @@ func ActivityRecordToActivity[T any](r ActivityRecord) (*Activity[T], error) {
 
 const followersTable = "followers"
 const followersRecordIDColumn = "id"
+const followersUserIDColumn = "user_id"
 const followersActorIDColumn = "actor_id"
 const followersActivityIDColumn = "activity_id"
 const followersCreatedAtColumn = "created_at"
@@ -344,12 +349,14 @@ const followersUpdatedAtColumn = "updated_at"
 
 var followersFields = []string{ //nolint:gochecknoglobals
 	followersRecordIDColumn,
+	followersUserIDColumn,
 	followersActorIDColumn,
 	followersActivityIDColumn,
 	followersCreatedAtColumn,
 	followersUpdatedAtColumn}
 
 var followersFieldsWritable = []string{ //nolint:gochecknoglobals
+	followersUserIDColumn,
 	followersActorIDColumn,
 	followersActivityIDColumn,
 	followersCreatedAtColumn,
@@ -358,6 +365,7 @@ var followersFieldsWritable = []string{ //nolint:gochecknoglobals
 // An FollowerRecord is a database record containing a follower of a user.
 type FollowerRecord struct {
 	RecordID   int64     `json:"record_id"`
+	UserID     int64     `json:"user_id"`
 	ActorID    string    `json:"actor_id"`
 	ActivityID string    `json:"activity_id"`
 	CreatedAt  time.Time `json:"created_at"`
@@ -367,6 +375,7 @@ type FollowerRecord struct {
 func (a *FollowerRecord) scannableFields() []any {
 	return []any{
 		&a.RecordID,
+		&a.UserID,
 		&a.ActorID,
 		&a.ActivityID,
 		&a.CreatedAt,
@@ -376,6 +385,7 @@ func (a *FollowerRecord) scannableFields() []any {
 
 const notesTable = "notes"
 const notesRecordIDColumn = "id"
+const notesUserIDColumn = "user_id"
 const notesActivityIDColumn = "activity_id"
 const notesObjectIDColumn = "object_id"
 const notesContentColumn = "content"
@@ -387,6 +397,7 @@ const notesUpdatedAtColumn = "updated_at"
 
 var notesFields = []string{ //nolint:gochecknoglobals
 	notesRecordIDColumn,
+	notesUserIDColumn,
 	notesActivityIDColumn,
 	notesObjectIDColumn,
 	notesContentColumn,
@@ -397,6 +408,7 @@ var notesFields = []string{ //nolint:gochecknoglobals
 	notesUpdatedAtColumn}
 
 var notesFieldsWritable = []string{ //nolint:gochecknoglobals
+	notesUserIDColumn,
 	notesActivityIDColumn,
 	notesObjectIDColumn,
 	notesContentColumn,
@@ -409,6 +421,7 @@ var notesFieldsWritable = []string{ //nolint:gochecknoglobals
 // An NoteRecord is a database record containing a note.
 type NoteRecord struct {
 	RecordID   int64
+	UserID     int64
 	ActivityID string
 	ObjectID   string
 	Content    string
@@ -419,12 +432,12 @@ type NoteRecord struct {
 	UpdatedAt  time.Time
 }
 
-func (n *NoteRecord) ToNote() *Note {
+func (n *NoteRecord) ToNote(user Actor) *Note {
 	return &Note{
 		Context:      NewContext([]string{ActivityStreamsContext}),
 		Type:         "Note",
 		ID:           n.ObjectID,
-		AttributedTo: GetMe().ID,
+		AttributedTo: user.ID,
 		Content:      n.Content,
 		Published:    n.Published.Format(time.RFC3339),
 		To:           n.To,
@@ -435,6 +448,7 @@ func (n *NoteRecord) ToNote() *Note {
 func (n *NoteRecord) scannableFields() []any {
 	return []any{
 		&n.RecordID,
+		&n.UserID,
 		&n.ActivityID,
 		&n.ObjectID,
 		&n.Content,

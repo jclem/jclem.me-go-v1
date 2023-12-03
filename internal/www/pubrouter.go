@@ -11,7 +11,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	ap "github.com/jclem/jclem.me/internal/activitypub"
+	"github.com/jclem/jclem.me/internal/activitypub/identity"
 	"github.com/jclem/jclem.me/internal/webfinger"
 	"github.com/jclem/jclem.me/internal/www/config"
 )
@@ -24,17 +26,28 @@ type activityInput struct {
 
 type pubRouter struct {
 	*chi.Mux
+	id  *identity.Service
 	pub *ap.Service
 }
 
 func newPubRouter() (*pubRouter, error) {
-	pub, err := ap.NewService(context.Background(), config.DatabaseURL())
+	pool, err := pgxpool.New(context.Background(), config.DatabaseURL())
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to database: %w", err)
+	}
+
+	id, err := identity.NewService(pool)
+	if err != nil {
+		return nil, fmt.Errorf("error creating identity service: %w", err)
+	}
+
+	pub, err := ap.NewService(context.Background(), pool, id)
 	if err != nil {
 		return nil, fmt.Errorf("error creating activitypub service: %w", err)
 	}
 
 	r := chi.NewRouter()
-	p := &pubRouter{Mux: r, pub: pub}
+	p := &pubRouter{Mux: r, id: id, pub: pub}
 	r.Use(p.setContentType)
 	r.Get("/.well-known/webfinger", p.handleWebfinger)
 	r.Mount("/~{username}", p.userRouter())
@@ -61,6 +74,15 @@ func (p *pubRouter) userRouter() chi.Router { //nolint:ireturn
 }
 
 func (p *pubRouter) createActivity(w http.ResponseWriter, r *http.Request) {
+	user := r.Context().Value(userContextKey).(identity.UserRecord) //nolint:forceTypeAssert
+
+	apuser, err := ap.GetUser(user.Username)
+	if err != nil {
+		returnError(r.Context(), w, err, "error getting user")
+
+		return
+	}
+
 	var note ap.Note
 	if err := json.NewDecoder(r.Body).Decode(&note); err != nil {
 		returnError(r.Context(), w, err, "error decoding note")
@@ -80,21 +102,19 @@ func (p *pubRouter) createActivity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	me := ap.GetMe()
-
 	note.Context = ap.NewContext(ap.ActivityStreamsContext, ap.MastodonContext)
-	note.ID = fmt.Sprintf("%s/notes/%s", me.ID, uuid.New())
-	note.AttributedTo = me.ID
+	note.ID = fmt.Sprintf("%s/notes/%s", apuser.ID, uuid.New())
+	note.AttributedTo = apuser.ID
 	note.Type = "Note"
 	note.Published = time.Now().UTC().Format(http.TimeFormat)
 	note.To = []string{ap.ActivityStreamsContext + "#Public"}
-	note.Cc = []string{me.Followers}
+	note.Cc = []string{apuser.Followers}
 
 	activity := ap.Activity[ap.Note]{
 		Context:   ap.NewContext(ap.ActivityStreamsContext),
 		Type:      "Create",
-		ID:        fmt.Sprintf("%s/outbox/%s", me.ID, uuid.New()),
-		Actor:     me.ID,
+		ID:        fmt.Sprintf("%s/outbox/%s", apuser.ID, uuid.New()),
+		Actor:     apuser.ID,
 		Object:    note,
 		Published: note.Published,
 		To:        note.To,
@@ -108,7 +128,7 @@ func (p *pubRouter) createActivity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ar, err := p.pub.CreateActivity(r.Context(), ap.Outbox, ap.ActivityStreamsContext, activity.Type, activity.ID, j)
+	ar, err := p.pub.CreateActivity(r.Context(), user.RecordID, ap.Outbox, ap.ActivityStreamsContext, activity.Type, activity.ID, j)
 	if err != nil {
 		returnError(r.Context(), w, err, "error creating activity")
 
@@ -133,6 +153,8 @@ func (p *pubRouter) createActivity(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *pubRouter) acceptActivity(w http.ResponseWriter, r *http.Request) {
+	user := r.Context().Value(userContextKey).(identity.UserRecord) //nolint:forceTypeAssert
+
 	b, err := io.ReadAll(r.Body)
 	if err != nil {
 		returnError(r.Context(), w, err, "error reading body")
@@ -147,7 +169,7 @@ func (p *pubRouter) acceptActivity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ar, err := p.pub.CreateActivity(r.Context(), ap.Inbox, activity.Context, activity.Type, activity.ID, b)
+	ar, err := p.pub.CreateActivity(r.Context(), user.RecordID, ap.Inbox, activity.Context, activity.Type, activity.ID, b)
 	if err != nil {
 		returnError(r.Context(), w, err, "error creating activity")
 
@@ -186,9 +208,16 @@ func (p *pubRouter) getNote(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *pubRouter) getOutbox(w http.ResponseWriter, r *http.Request) {
-	me := ap.GetMe()
+	user := r.Context().Value(userContextKey).(identity.UserRecord) //nolint:forceTypeAssert
 
-	items, err := p.pub.ListPublicOutbox(r.Context())
+	apuser, err := ap.GetUser(user.Username)
+	if err != nil {
+		returnError(r.Context(), w, err, "error getting AP user")
+
+		return
+	}
+
+	items, err := p.pub.ListPublicOutbox(r.Context(), user.RecordID)
 	if err != nil {
 		returnError(r.Context(), w, err, "error listing outbox")
 
@@ -208,7 +237,7 @@ func (p *pubRouter) getOutbox(w http.ResponseWriter, r *http.Request) {
 		itemObjects = append(itemObjects, itemObject)
 	}
 
-	collection := ap.NewCollection(me.Outbox, itemObjects)
+	collection := ap.NewCollection(apuser.Outbox, itemObjects)
 	if err := json.NewEncoder(w).Encode(collection); err != nil {
 		returnError(r.Context(), w, err, "error encoding actor")
 
@@ -217,16 +246,9 @@ func (p *pubRouter) getOutbox(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *pubRouter) listFollowers(w http.ResponseWriter, r *http.Request) {
-	username := chi.URLParam(r, "username")
-	user, err := ap.GetUser(username)
+	user := r.Context().Value(userContextKey).(identity.UserRecord) //nolint:forceTypeAssert
 
-	if err != nil {
-		returnCodeError(r.Context(), w, http.StatusNotFound, fmt.Sprintf("user not found: %q", username))
-
-		return
-	}
-
-	followers, err := p.pub.ListFollowers(r.Context())
+	followers, err := p.pub.ListFollowers(r.Context(), user.RecordID)
 	if err != nil {
 		returnError(r.Context(), w, err, "error listing followers")
 
@@ -238,7 +260,14 @@ func (p *pubRouter) listFollowers(w http.ResponseWriter, r *http.Request) {
 		followerIDs = append(followerIDs, follower.ActorID)
 	}
 
-	collection := ap.NewCollection(user.Followers, followerIDs)
+	apuser, err := ap.GetUser(user.Username)
+	if err != nil {
+		returnError(r.Context(), w, err, "error getting AP user")
+
+		return
+	}
+
+	collection := ap.NewCollection(apuser.Followers, followerIDs)
 	if err := json.NewEncoder(w).Encode(collection); err != nil {
 		returnError(r.Context(), w, err, "error encoding collection")
 
@@ -323,17 +352,21 @@ func (p *pubRouter) setContentType(next http.Handler) http.Handler {
 func (p *pubRouter) ensureUser(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		username := chi.URLParam(r, "username")
-		if username != ap.GetMe().PreferredUsername {
+
+		user, err := p.id.GetUserByUsername(r.Context(), username)
+		if err != nil {
 			returnCodeError(r.Context(), w, http.StatusNotFound, fmt.Sprintf("user not found: %q", username))
 
 			return
 		}
 
-		next.ServeHTTP(w, r)
+		ctx := context.WithValue(r.Context(), userContextKey, user)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
 var bearerTokenRegex = regexp.MustCompile(`^Bearer (\S+)$`)
+var userContextKey = struct{}{} //nolint:gochecknoglobals
 
 func (p *pubRouter) verifyBearerToken(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -344,7 +377,6 @@ func (p *pubRouter) verifyBearerToken(next http.Handler) http.Handler {
 			return
 		}
 
-		// Find the match group in the regex.
 		parts := bearerTokenRegex.FindStringSubmatch(auth)
 		if len(parts) != 2 {
 			returnCodeError(r.Context(), w, http.StatusUnauthorized, "invalid authorization header")
@@ -352,12 +384,14 @@ func (p *pubRouter) verifyBearerToken(next http.Handler) http.Handler {
 			return
 		}
 
-		if token := parts[1]; token != config.APIKey() {
+		user, err := p.id.ValidateAPIKey(r.Context(), parts[1])
+		if err != nil {
 			returnCodeError(r.Context(), w, http.StatusUnauthorized, "invalid authorization header")
 
 			return
 		}
 
-		next.ServeHTTP(w, r)
+		ctx := context.WithValue(r.Context(), userContextKey, user)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
