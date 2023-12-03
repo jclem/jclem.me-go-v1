@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/jclem/jclem.me/internal/www/config"
+	"github.com/jclem/jclem.me/internal/activitypub/identity"
 )
 
 // ActivityStreamsContext is the ActivityStreams context.
@@ -164,15 +164,9 @@ type Note struct {
 	Cc           []string `json:"cc"`
 }
 
-const me = "jclem"
-
-// GetUser gets an actor by username.
-func GetUser(username string) (Actor, error) {
-	if username != me {
-		return Actor{}, fmt.Errorf("user %s not found", username)
-	}
-
-	pubkey := config.PublicKeyPEM()
+// ActorFromUser gets an actor from a system user.
+func ActorFromUser(user identity.User, pubKey identity.SigningKey) (Actor, error) {
+	username := user.Username
 
 	return Actor{
 		Context:           NewContext(ActivityStreamsContext, SecurityContext),
@@ -194,7 +188,7 @@ func GetUser(username string) (Actor, error) {
 		PublicKey: PublicKey{
 			ID:           fmt.Sprintf("https://%s/~%s#main-key", Domain, username),
 			Owner:        fmt.Sprintf("https://%s/~%s", Domain, username),
-			PublicKeyPem: pubkey,
+			PublicKeyPem: pubKey.PEM,
 		},
 	}, nil
 }

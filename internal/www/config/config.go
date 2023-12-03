@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -17,16 +16,14 @@ const (
 )
 
 type Config struct {
-	Port             string `mapstructure:"port"`
-	AppEnv           AppEnv `mapstructure:"app_env"`
-	DatabaseURL      string `mapstructure:"database_url"`
-	APIKey           string `mapstructure:"api_key"`
-	SpacesSecret     string `mapstructure:"do_spaces_secret"`
-	SpacesKeyID      string `mapstructure:"do_spaces_key_id"`
-	SpacesEndpoint   string `mapstructure:"do_spaces_endpoint"`
-	SpacesBucket     string `mapstructure:"do_spaces_bucket"`
-	PublicKeyPEMRaw  string `mapstructure:"ap_public_key_pem"`
-	PrivateKeyPEMRaw string `mapstructure:"ap_private_key_pem"`
+	Port           string `mapstructure:"port"`
+	AppEnv         AppEnv `mapstructure:"app_env"`
+	DatabaseURL    string `mapstructure:"database_url"`
+	APIKey         string `mapstructure:"api_key"`
+	SpacesSecret   string `mapstructure:"do_spaces_secret"`
+	SpacesKeyID    string `mapstructure:"do_spaces_key_id"`
+	SpacesEndpoint string `mapstructure:"do_spaces_endpoint"`
+	SpacesBucket   string `mapstructure:"do_spaces_bucket"`
 }
 
 var GlobalConfig Config //nolint:gochecknoglobals
@@ -67,30 +64,6 @@ func URLPort() string {
 	return GlobalConfig.URLPort()
 }
 
-func (c Config) PublicKeyPEM() string {
-	if c.PublicKeyPEMRaw == "" {
-		panic("public key PEM not set")
-	}
-
-	return strings.ReplaceAll(c.PublicKeyPEMRaw, `\n`, "\n")
-}
-
-func PublicKeyPEM() string {
-	return GlobalConfig.PublicKeyPEM()
-}
-
-func (c Config) PrivateKeyPEM() string {
-	if c.PrivateKeyPEMRaw == "" {
-		panic("private key PEM not set")
-	}
-
-	return strings.ReplaceAll(c.PrivateKeyPEMRaw, `\n`, "\n")
-}
-
-func PrivateKeyPEM() string {
-	return GlobalConfig.PrivateKeyPEM()
-}
-
 func (c Config) URLHostname() string {
 	if c.IsProd() {
 		return os.Getenv("HOSTNAME")
@@ -126,8 +99,6 @@ func LoadConfig() (Config, error) {
 	viper.SetDefault("do_spaces_key_id", "")
 	viper.SetDefault("do_spaces_endpoint", "")
 	viper.SetDefault("do_spaces_bucket", "")
-	viper.SetDefault("ap_public_key_pem", "")
-	viper.SetDefault("ap_private_key_pem", "")
 
 	viper.AddConfigPath(".")
 	viper.SetConfigName("config")

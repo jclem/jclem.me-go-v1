@@ -24,49 +24,92 @@ type Service struct {
 var ErrUserNotFound = fmt.Errorf("user not found")
 
 // GetUserByID gets a user by ID.
-func (s *Service) GetUserByID(ctx context.Context, id int64) (UserRecord, error) {
+func (s *Service) GetUserByID(ctx context.Context, id int64) (User, error) {
 	query, args, err := s.sql.
 		Select(usersFields...).
 		From(usersTable).
-		Where(squirrel.Eq{usersRecordIDColumn: id}).
+		Where(squirrel.Eq{usersIDColumn: id}).
 		ToSql()
 	if err != nil {
-		return UserRecord{}, fmt.Errorf("could not build query: %w", err)
+		return User{}, fmt.Errorf("could not build query: %w", err)
 	}
 
-	var user UserRecord
+	var user User
 	if err := s.pool.QueryRow(ctx, query, args...).Scan(user.scannableFields()...); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return UserRecord{}, ErrUserNotFound
+			return User{}, ErrUserNotFound
 		}
 
-		return UserRecord{}, fmt.Errorf("could not query row: %w", err)
+		return User{}, fmt.Errorf("could not query row: %w", err)
 	}
 
 	return user, nil
 }
 
 // GetUserByUsername gets a user by username.
-func (s *Service) GetUserByUsername(ctx context.Context, username string) (UserRecord, error) {
+func (s *Service) GetUserByUsername(ctx context.Context, username string) (User, error) {
 	query, args, err := s.sql.
 		Select(usersFields...).
 		From(usersTable).
 		Where(squirrel.Eq{usersUsernameColumn: username}).
 		ToSql()
 	if err != nil {
-		return UserRecord{}, fmt.Errorf("could not build query: %w", err)
+		return User{}, fmt.Errorf("could not build query: %w", err)
 	}
 
-	var user UserRecord
+	var user User
 	if err := s.pool.QueryRow(ctx, query, args...).Scan(user.scannableFields()...); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return UserRecord{}, ErrUserNotFound
+			return User{}, ErrUserNotFound
 		}
 
-		return UserRecord{}, fmt.Errorf("could not query row: %w", err)
+		return User{}, fmt.Errorf("could not query row: %w", err)
 	}
 
 	return user, nil
+}
+
+type keyKind string
+
+const (
+	keyKindPublic  keyKind = "public"
+	keyKindPrivate keyKind = "private"
+)
+
+// ErrSigningKeyNotFound is returned when a signing key is not found.
+var ErrSigningKeyNotFound = fmt.Errorf("signing key not found")
+
+// GetPublicKey gets a user's public signing key.
+func (s *Service) GetPublicKey(ctx context.Context, userID int64) (SigningKey, error) {
+	return s.getSigningKey(ctx, userID, keyKindPublic)
+}
+
+// GetPrivateKey gets a user's private signing key.
+func (s *Service) GetPrivateKey(ctx context.Context, userID int64) (SigningKey, error) {
+	return s.getSigningKey(ctx, userID, keyKindPrivate)
+}
+
+func (s *Service) getSigningKey(ctx context.Context, userID int64, kind keyKind) (SigningKey, error) {
+	query, args, err := s.sql.
+		Select(signingKeysFields...).
+		From(signingKeysTable).
+		Where(squirrel.Eq{signingKeysKindColumn: kind}).
+		Where(squirrel.Eq{signingKeysUserIDColumn: userID}).
+		ToSql()
+	if err != nil {
+		return SigningKey{}, fmt.Errorf("could not build query: %w", err)
+	}
+
+	var key SigningKey
+	if err := s.pool.QueryRow(ctx, query, args...).Scan(key.scannableFields()...); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return SigningKey{}, ErrSigningKeyNotFound
+		}
+
+		return SigningKey{}, fmt.Errorf("could not query row: %w", err)
+	}
+
+	return key, nil
 }
 
 // ErrInvalidAPIKey is returned when an API key is invalid.
@@ -76,10 +119,10 @@ var ErrInvalidAPIKey = fmt.Errorf("invalid API key")
 //
 // API keys submitted by clients are of the format "$id.$value" where $id is the
 // user ID and $value is the API key value (a random string).
-func (s *Service) ValidateAPIKey(ctx context.Context, key string) (UserRecord, error) {
+func (s *Service) ValidateAPIKey(ctx context.Context, key string) (User, error) {
 	keyparts := strings.SplitN(key, ".", 2)
 	if len(keyparts) != 2 {
-		return UserRecord{}, ErrInvalidAPIKey
+		return User{}, ErrInvalidAPIKey
 	}
 
 	keyid := keyparts[0]
@@ -88,23 +131,23 @@ func (s *Service) ValidateAPIKey(ctx context.Context, key string) (UserRecord, e
 	query, args, err := s.sql.
 		Select(apiKeysFields...).
 		From(apiKeysTable).
-		Where(squirrel.Eq{apiKeysRecordIDColumn: keyid}).
+		Where(squirrel.Eq{apiKeysIDColumn: keyid}).
 		ToSql()
 	if err != nil {
-		return UserRecord{}, fmt.Errorf("could not build query: %w", err)
+		return User{}, fmt.Errorf("could not build query: %w", err)
 	}
 
-	var apikey APIKeyRecord
+	var apikey APIKey
 	if err := s.pool.QueryRow(ctx, query, args...).Scan(apikey.scannableFields()...); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return UserRecord{}, ErrInvalidAPIKey
+			return User{}, ErrInvalidAPIKey
 		}
 
-		return UserRecord{}, fmt.Errorf("could not query row: %w", err)
+		return User{}, fmt.Errorf("could not query row: %w", err)
 	}
 
 	if subtle.ConstantTimeCompare([]byte(apikey.Value), []byte(keyvalue)) != 1 {
-		return UserRecord{}, ErrInvalidAPIKey
+		return User{}, ErrInvalidAPIKey
 	}
 
 	return s.GetUserByID(ctx, apikey.UserID)
@@ -118,33 +161,71 @@ func NewService(pool *pgxpool.Pool) (*Service, error) {
 	}, nil
 }
 
+const signingKeysTable = "key_pems"
+const signingKeysIDColumn = "id"
+const signingKeysUserIDColumn = "user_id"
+const signingKeysKindColumn = "kind"
+const signingKeysPEMColumn = "pem"
+const signingKeysCreatedAtColumn = "created_at"
+const signingKeysUpdatedAtColumn = "updated_at"
+
+var signingKeysFields = []string{ //nolint:gochecknoglobals
+	signingKeysIDColumn,
+	signingKeysUserIDColumn,
+	signingKeysKindColumn,
+	signingKeysPEMColumn,
+	signingKeysCreatedAtColumn,
+	signingKeysUpdatedAtColumn,
+}
+
+// A SigningKey is a public key in PEM format.
+type SigningKey struct {
+	ID        int64     `json:"id"`
+	UserID    int64     `json:"user_id"`
+	Kind      string    `json:"kind"`
+	PEM       string    `json:"pem"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func (k *SigningKey) scannableFields() []any {
+	return []any{
+		&k.ID,
+		&k.UserID,
+		&k.Kind,
+		&k.PEM,
+		&k.CreatedAt,
+		&k.UpdatedAt,
+	}
+}
+
 const usersTable = "users"
-const usersRecordIDColumn = "id"
+const usersIDColumn = "id"
 const usersEmailColumn = "email"
 const usersUsernameColumn = "username"
 const usersCreatedAt = "created_at"
 const usersUpdatedAt = "updated_at"
 
 var usersFields = []string{ //nolint:gochecknoglobals
-	usersRecordIDColumn,
+	usersIDColumn,
 	usersEmailColumn,
 	usersUsernameColumn,
 	usersCreatedAt,
 	usersUpdatedAt,
 }
 
-// A UserRecord is a database record containing a user.
-type UserRecord struct {
-	RecordID  int64     `json:"record_id"`
+// A User is a user of the system.
+type User struct {
+	ID        int64     `json:"id"`
 	Email     string    `json:"email"`
 	Username  string    `json:"username"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-func (u *UserRecord) scannableFields() []any {
+func (u *User) scannableFields() []any {
 	return []any{
-		&u.RecordID,
+		&u.ID,
 		&u.Email,
 		&u.Username,
 		&u.CreatedAt,
@@ -153,32 +234,32 @@ func (u *UserRecord) scannableFields() []any {
 }
 
 const apiKeysTable = "api_keys"
-const apiKeysRecordIDColumn = "id"
+const apiKeysIDColumn = "id"
 const apiKeysUserIDColumn = "user_id"
 const apiKeysValueColumn = "value"
 const apiKeysCreatedAtColumn = "created_at"
 const apiKeysUpdatedAtColumn = "updated_at"
 
 var apiKeysFields = []string{ //nolint:gochecknoglobals
-	apiKeysRecordIDColumn,
+	apiKeysIDColumn,
 	apiKeysUserIDColumn,
 	apiKeysValueColumn,
 	apiKeysCreatedAtColumn,
 	apiKeysUpdatedAtColumn,
 }
 
-// An APIKeyRecord is a database record containing an API key.
-type APIKeyRecord struct {
-	RecordID  int64     `json:"record_id"`
+// An APIKey is a key used to verify a user's API requests.
+type APIKey struct {
+	ID        int64     `json:"id"`
 	UserID    int64     `json:"user_id"`
 	Value     string    `json:"value"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-func (a *APIKeyRecord) scannableFields() []any {
+func (a *APIKey) scannableFields() []any {
 	return []any{
-		&a.RecordID,
+		&a.ID,
 		&a.UserID,
 		&a.Value,
 		&a.CreatedAt,

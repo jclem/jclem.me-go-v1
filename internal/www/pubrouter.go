@@ -3,6 +3,7 @@ package www
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -74,9 +75,16 @@ func (p *pubRouter) userRouter() chi.Router { //nolint:ireturn
 }
 
 func (p *pubRouter) createActivity(w http.ResponseWriter, r *http.Request) {
-	user := r.Context().Value(userContextKey).(identity.UserRecord) //nolint:forceTypeAssert
+	user := r.Context().Value(userContextKey).(identity.User) //nolint:forceTypeAssert
 
-	apuser, err := ap.GetUser(user.Username)
+	pubKey, err := p.id.GetPublicKey(r.Context(), user.ID)
+	if err != nil {
+		returnError(r.Context(), w, err, "error getting public key")
+
+		return
+	}
+
+	actor, err := ap.ActorFromUser(user, pubKey)
 	if err != nil {
 		returnError(r.Context(), w, err, "error getting user")
 
@@ -103,18 +111,18 @@ func (p *pubRouter) createActivity(w http.ResponseWriter, r *http.Request) {
 	}
 
 	note.Context = ap.NewContext(ap.ActivityStreamsContext, ap.MastodonContext)
-	note.ID = fmt.Sprintf("%s/notes/%s", apuser.ID, uuid.New())
-	note.AttributedTo = apuser.ID
+	note.ID = fmt.Sprintf("%s/notes/%s", actor.ID, uuid.New())
+	note.AttributedTo = actor.ID
 	note.Type = "Note"
 	note.Published = time.Now().UTC().Format(http.TimeFormat)
 	note.To = []string{ap.ActivityStreamsContext + "#Public"}
-	note.Cc = []string{apuser.Followers}
+	note.Cc = []string{actor.Followers}
 
 	activity := ap.Activity[ap.Note]{
 		Context:   ap.NewContext(ap.ActivityStreamsContext),
 		Type:      "Create",
-		ID:        fmt.Sprintf("%s/outbox/%s", apuser.ID, uuid.New()),
-		Actor:     apuser.ID,
+		ID:        fmt.Sprintf("%s/outbox/%s", actor.ID, uuid.New()),
+		Actor:     actor.ID,
 		Object:    note,
 		Published: note.Published,
 		To:        note.To,
@@ -128,7 +136,7 @@ func (p *pubRouter) createActivity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ar, err := p.pub.CreateActivity(r.Context(), user.RecordID, ap.Outbox, ap.ActivityStreamsContext, activity.Type, activity.ID, j)
+	ar, err := p.pub.CreateActivity(r.Context(), user.ID, ap.Outbox, ap.ActivityStreamsContext, activity.Type, activity.ID, j)
 	if err != nil {
 		returnError(r.Context(), w, err, "error creating activity")
 
@@ -153,7 +161,7 @@ func (p *pubRouter) createActivity(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *pubRouter) acceptActivity(w http.ResponseWriter, r *http.Request) {
-	user := r.Context().Value(userContextKey).(identity.UserRecord) //nolint:forceTypeAssert
+	user := r.Context().Value(userContextKey).(identity.User) //nolint:forceTypeAssert
 
 	b, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -169,7 +177,7 @@ func (p *pubRouter) acceptActivity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ar, err := p.pub.CreateActivity(r.Context(), user.RecordID, ap.Inbox, activity.Context, activity.Type, activity.ID, b)
+	ar, err := p.pub.CreateActivity(r.Context(), user.ID, ap.Inbox, activity.Context, activity.Type, activity.ID, b)
 	if err != nil {
 		returnError(r.Context(), w, err, "error creating activity")
 
@@ -188,14 +196,34 @@ func (p *pubRouter) acceptActivity(w http.ResponseWriter, r *http.Request) {
 func (p *pubRouter) getUser(w http.ResponseWriter, r *http.Request) {
 	username := chi.URLParam(r, "username")
 
-	user, err := ap.GetUser(username)
+	user, err := p.id.GetUserByUsername(r.Context(), username)
+	if err != nil {
+		if errors.Is(err, identity.ErrUserNotFound) {
+			returnCodeError(r.Context(), w, http.StatusNotFound, fmt.Sprintf("user not found: %q", username))
+
+			return
+		}
+
+		returnError(r.Context(), w, err, "error getting user")
+
+		return
+	}
+
+	pubKey, err := p.id.GetPublicKey(r.Context(), user.ID)
+	if err != nil {
+		returnError(r.Context(), w, err, "error getting public key")
+
+		return
+	}
+
+	actor, err := ap.ActorFromUser(user, pubKey)
 	if err != nil {
 		returnCodeError(r.Context(), w, http.StatusNotFound, fmt.Sprintf("user not found: %q", username))
 
 		return
 	}
 
-	if err := json.NewEncoder(w).Encode(user); err != nil {
+	if err := json.NewEncoder(w).Encode(actor); err != nil {
 		returnError(r.Context(), w, err, "error encoding actor")
 
 		return
@@ -208,16 +236,23 @@ func (p *pubRouter) getNote(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *pubRouter) getOutbox(w http.ResponseWriter, r *http.Request) {
-	user := r.Context().Value(userContextKey).(identity.UserRecord) //nolint:forceTypeAssert
+	user := r.Context().Value(userContextKey).(identity.User) //nolint:forceTypeAssert
 
-	apuser, err := ap.GetUser(user.Username)
+	pubKey, err := p.id.GetPublicKey(r.Context(), user.ID)
+	if err != nil {
+		returnError(r.Context(), w, err, "error getting public key")
+
+		return
+	}
+
+	actor, err := ap.ActorFromUser(user, pubKey)
 	if err != nil {
 		returnError(r.Context(), w, err, "error getting AP user")
 
 		return
 	}
 
-	items, err := p.pub.ListPublicOutbox(r.Context(), user.RecordID)
+	items, err := p.pub.ListPublicOutbox(r.Context(), user.ID)
 	if err != nil {
 		returnError(r.Context(), w, err, "error listing outbox")
 
@@ -237,7 +272,7 @@ func (p *pubRouter) getOutbox(w http.ResponseWriter, r *http.Request) {
 		itemObjects = append(itemObjects, itemObject)
 	}
 
-	collection := ap.NewCollection(apuser.Outbox, itemObjects)
+	collection := ap.NewCollection(actor.Outbox, itemObjects)
 	if err := json.NewEncoder(w).Encode(collection); err != nil {
 		returnError(r.Context(), w, err, "error encoding actor")
 
@@ -246,9 +281,9 @@ func (p *pubRouter) getOutbox(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *pubRouter) listFollowers(w http.ResponseWriter, r *http.Request) {
-	user := r.Context().Value(userContextKey).(identity.UserRecord) //nolint:forceTypeAssert
+	user := r.Context().Value(userContextKey).(identity.User) //nolint:forceTypeAssert
 
-	followers, err := p.pub.ListFollowers(r.Context(), user.RecordID)
+	followers, err := p.pub.ListFollowers(r.Context(), user.ID)
 	if err != nil {
 		returnError(r.Context(), w, err, "error listing followers")
 
@@ -260,14 +295,21 @@ func (p *pubRouter) listFollowers(w http.ResponseWriter, r *http.Request) {
 		followerIDs = append(followerIDs, follower.ActorID)
 	}
 
-	apuser, err := ap.GetUser(user.Username)
+	pubKey, err := p.id.GetPublicKey(r.Context(), user.ID)
+	if err != nil {
+		returnError(r.Context(), w, err, "error getting public key")
+
+		return
+	}
+
+	actor, err := ap.ActorFromUser(user, pubKey)
 	if err != nil {
 		returnError(r.Context(), w, err, "error getting AP user")
 
 		return
 	}
 
-	collection := ap.NewCollection(apuser.Followers, followerIDs)
+	collection := ap.NewCollection(actor.Followers, followerIDs)
 	if err := json.NewEncoder(w).Encode(collection); err != nil {
 		returnError(r.Context(), w, err, "error encoding collection")
 
@@ -277,7 +319,28 @@ func (p *pubRouter) listFollowers(w http.ResponseWriter, r *http.Request) {
 
 func (p *pubRouter) listFollowing(w http.ResponseWriter, r *http.Request) {
 	username := chi.URLParam(r, "username")
-	user, err := ap.GetUser(username)
+
+	user, err := p.id.GetUserByUsername(r.Context(), username)
+	if err != nil {
+		if errors.Is(err, identity.ErrUserNotFound) {
+			returnCodeError(r.Context(), w, http.StatusNotFound, fmt.Sprintf("user not found: %q", username))
+
+			return
+		}
+
+		returnError(r.Context(), w, err, "error getting user")
+
+		return
+	}
+
+	pubKey, err := p.id.GetPublicKey(r.Context(), user.ID)
+	if err != nil {
+		returnError(r.Context(), w, err, "error getting public key")
+
+		return
+	}
+
+	actor, err := ap.ActorFromUser(user, pubKey)
 
 	if err != nil {
 		returnCodeError(r.Context(), w, http.StatusNotFound, fmt.Sprintf("user not found: %q", username))
@@ -285,7 +348,7 @@ func (p *pubRouter) listFollowing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	collection := ap.NewCollection(user.Following, []string{})
+	collection := ap.NewCollection(actor.Following, []string{})
 	if err := json.NewEncoder(w).Encode(collection); err != nil {
 		returnError(r.Context(), w, err, "error encoding collection")
 
@@ -318,7 +381,27 @@ func (p *pubRouter) handleWebfinger(w http.ResponseWriter, r *http.Request) {
 
 	username := parts[1]
 
-	user, err := ap.GetUser(username)
+	user, err := p.id.GetUserByUsername(r.Context(), username)
+	if err != nil {
+		if errors.Is(err, identity.ErrUserNotFound) {
+			returnCodeError(r.Context(), w, http.StatusNotFound, fmt.Sprintf("user not found: %q", username))
+
+			return
+		}
+
+		returnError(r.Context(), w, err, "error getting user")
+
+		return
+	}
+
+	pubKey, err := p.id.GetPublicKey(r.Context(), user.ID)
+	if err != nil {
+		returnError(r.Context(), w, err, "error getting public key")
+
+		return
+	}
+
+	actor, err := ap.ActorFromUser(user, pubKey)
 	if err != nil {
 		returnCodeError(r.Context(), w, http.StatusNotFound, fmt.Sprintf("user not found: %q", username))
 
@@ -327,12 +410,12 @@ func (p *pubRouter) handleWebfinger(w http.ResponseWriter, r *http.Request) {
 
 	if err := json.NewEncoder(w).Encode(webfinger.JRD{
 		Subject: resource,
-		Aliases: []string{user.ID},
+		Aliases: []string{actor.ID},
 		Links: []webfinger.Link{
 			{
 				Rel:  "self",
 				Type: ap.ContentType,
-				Href: user.ID,
+				Href: actor.ID,
 			},
 		},
 	}); err != nil {

@@ -15,7 +15,6 @@ import (
 
 	"github.com/go-fed/httpsig"
 	"github.com/jclem/jclem.me/internal/activitypub/identity"
-	"github.com/jclem/jclem.me/internal/www/config"
 	"github.com/riverqueue/river"
 )
 
@@ -101,7 +100,12 @@ func (w *HandleFollowWorker) acceptFollower(ctx context.Context, userRecordID in
 		return fmt.Errorf("failed to get user: %w", err)
 	}
 
-	apuser, err := GetUser(user.Username)
+	pubKey, err := w.id.GetPublicKey(ctx, userRecordID)
+	if err != nil {
+		return fmt.Errorf("failed to get public key: %w", err)
+	}
+
+	apuser, err := ActorFromUser(user, pubKey)
 	if err != nil {
 		return fmt.Errorf("failed to get actor: %w", err)
 	}
@@ -140,7 +144,12 @@ func (w *HandleFollowWorker) acceptFollower(ctx context.Context, userRecordID in
 	req.Header.Set("Accept", "application/activity+json")
 	req.Header.Set("Date", time.Now().UTC().Format(http.TimeFormat))
 
-	if err := signJSONLDRequest(apuser, req, j); err != nil {
+	pk, err := w.id.GetPrivateKey(ctx, userRecordID)
+	if err != nil {
+		return fmt.Errorf("error getting private key: %w", err)
+	}
+
+	if err := signJSONLDRequest(pk, apuser, req, j); err != nil {
 		return fmt.Errorf("error signing accept request: %w", err)
 	}
 
@@ -169,7 +178,7 @@ func newHandleFollowWorker(pub *Service, id *identity.Service) *HandleFollowWork
 	}
 }
 
-func signJSONLDRequest(u Actor, r *http.Request, b []byte) error {
+func signJSONLDRequest(privateKeyPEM identity.SigningKey, u Actor, r *http.Request, b []byte) error {
 	prefs := []httpsig.Algorithm{httpsig.RSA_SHA256}
 	digestAlgo := httpsig.DigestSha256
 	headers := []string{httpsig.RequestTarget, "date", "digest"}
@@ -179,9 +188,7 @@ func signJSONLDRequest(u Actor, r *http.Request, b []byte) error {
 		return fmt.Errorf("error creating signer: %w", err)
 	}
 
-	privateKeyPEM := config.PrivateKeyPEM()
-
-	block, _ := pem.Decode([]byte(privateKeyPEM))
+	block, _ := pem.Decode([]byte(privateKeyPEM.PEM))
 	if block == nil {
 		return errors.New("error decoding private key")
 	}
