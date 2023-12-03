@@ -206,16 +206,16 @@ type Actor struct {
 	Context           Context   `json:"@context"`
 	Type              string    `json:"type"`
 	ID                string    `json:"id"`
-	Inbox             string    `json:"inbox"`
-	Outbox            string    `json:"outbox"`
-	Following         string    `json:"following"`
-	Followers         string    `json:"followers"`
-	PreferredUsername string    `json:"preferredUsername"`
-	Name              string    `json:"name"`
-	Summary           string    `json:"summary"`
-	URL               string    `json:"url"`
-	Icon              Image     `json:"icon"`
-	PublicKey         PublicKey `json:"publicKey"`
+	Inbox             string    `json:"inbox,omitempty"`
+	Outbox            string    `json:"outbox,omitempty"`
+	Following         string    `json:"following,omitempty"`
+	Followers         string    `json:"followers,omitempty"`
+	PreferredUsername string    `json:"preferredUsername,omitempty"`
+	Name              string    `json:"name,omitempty"`
+	Summary           string    `json:"summary,omitempty"`
+	URL               string    `json:"url,omitempty"`
+	Icon              Image     `json:"icon,omitempty"`
+	PublicKey         PublicKey `json:"publicKey,omitempty"`
 }
 
 // An Actorish is an interface for types that can be actors (they have
