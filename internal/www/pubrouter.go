@@ -2,14 +2,19 @@ package www
 
 import (
 	"context"
+	"crypto"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"regexp"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-fed/httpsig"
 	"github.com/jackc/pgx/v5/pgxpool"
 	ap "github.com/jclem/jclem.me/internal/activitypub"
 	"github.com/jclem/jclem.me/internal/activitypub/identity"
@@ -21,6 +26,7 @@ type activityInput struct {
 	Context string `json:"@context"`
 	Type    string `json:"type"`
 	ID      string `json:"id"`
+	Actor   string `json:"actor"`
 }
 
 type pubRouter struct {
@@ -133,6 +139,62 @@ func (p *pubRouter) acceptActivity(w http.ResponseWriter, r *http.Request) {
 	var activity activityInput
 	if err := json.Unmarshal(b, &activity); err != nil {
 		returnError(r.Context(), w, err, "error decoding activity")
+		return
+	}
+
+	actor, err := ap.GetActor(r.Context(), activity.Actor)
+	if err != nil {
+		returnError(r.Context(), w, err, "error getting actor")
+		return
+	}
+
+	key, _ := pem.Decode([]byte(actor.PublicKey.PublicKeyPem))
+	if key == nil {
+		returnError(r.Context(), w, errors.New("error decoding public key"), "error decoding public key")
+		return
+	}
+
+	pkeyAny, err := x509.ParsePKIXPublicKey(key.Bytes)
+	if err != nil {
+		returnError(r.Context(), w, err, "error parsing public key")
+		return
+	}
+
+	pubKey, ok := pkeyAny.(crypto.PublicKey)
+	if !ok {
+		returnError(r.Context(), w, errors.New("error casting public key"), "error casting public key")
+		return
+	}
+
+	verifier, err := httpsig.NewVerifier(r)
+	if err != nil {
+		returnError(r.Context(), w, err, "error creating verifier")
+		return
+	}
+
+	if actor.PublicKey.ID != verifier.KeyId() {
+		returnCodeError(r.Context(), w, http.StatusUnauthorized, "invalid key id")
+		return
+	}
+
+	algorithmRegex := regexp.MustCompile(`algorithm="([^"]+)"`)
+	algorithm := algorithmRegex.FindStringSubmatch(r.Header.Get("Signature"))
+	if len(algorithm) != 2 {
+		returnCodeError(r.Context(), w, http.StatusUnauthorized, "invalid algorithm")
+		return
+	}
+
+	var algo httpsig.Algorithm
+	switch strings.ToLower(algorithm[1]) {
+	case "rsa-sha256":
+		algo = httpsig.RSA_SHA256
+	default:
+		returnCodeError(r.Context(), w, http.StatusUnauthorized, "invalid algorithm")
+		return
+	}
+
+	if err := verifier.Verify(pubKey, algo); err != nil {
+		returnError(r.Context(), w, err, "error verifying request")
 		return
 	}
 

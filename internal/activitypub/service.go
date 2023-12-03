@@ -67,13 +67,15 @@ func (s *Service) CreateActivity(ctx context.Context, userRecordID int64, mailbo
 	return ar, nil
 }
 
+var acceptableActivities = []string{followActivityType, undoActivityType} //nolint:gochecknoglobals
+
 func (s *Service) handleInbox(ctx context.Context, tx pgx.Tx, userRecordID int64, ar ActivityRecord) error {
-	if ar.Type != "Follow" {
+	if !slices.Contains(acceptableActivities, ar.Type) {
 		slog.InfoContext(ctx, "ignoring non-follow activity", "activity_id", ar, "activity_type", ar.Type)
 		return nil
 	}
 
-	if _, err := s.river.InsertTx(ctx, tx, HandleFollowArgs{UserRecordID: userRecordID, ActivityID: ar.ID}, nil); err != nil {
+	if _, err := s.river.InsertTx(ctx, tx, HandleInboxArgs{UserRecordID: userRecordID, ActivityID: ar.ID}, nil); err != nil {
 		return fmt.Errorf("failed to insert follow job: %w", err)
 	}
 
@@ -81,7 +83,7 @@ func (s *Service) handleInbox(ctx context.Context, tx pgx.Tx, userRecordID int64
 }
 
 func (s *Service) handleOutbox(ctx context.Context, tx pgx.Tx, userRecordID int64, ar ActivityRecord) error {
-	if ar.Type != "Create" {
+	if ar.Type != createActivityType {
 		return fmt.Errorf("invalid activity type: %s", ar.Type)
 	}
 
@@ -206,6 +208,24 @@ func (s *Service) CreateFollower(ctx context.Context, userRecordID int64, actorI
 	return f, nil
 }
 
+// DeleteFollower deletes a follower record.
+func (s *Service) DeleteFollower(ctx context.Context, userRecordID int64, actorID string) error {
+	query, args, err := s.sql.
+		Delete(followersTable).
+		Where(squirrel.Eq{followersUserIDColumn: userRecordID}).
+		Where(squirrel.Eq{followersActorIDColumn: actorID}).
+		ToSql()
+	if err != nil {
+		return fmt.Errorf("failed to build query: %w", err)
+	}
+
+	if _, err := s.pool.Exec(ctx, query, args...); err != nil {
+		return fmt.Errorf("failed to delete follower: %w", err)
+	}
+
+	return nil
+}
+
 // ListPublicOutbox lists all public outbox activity.
 func (s *Service) ListPublicOutbox(ctx context.Context, userRecordID int64) ([]ActivityRecord, error) {
 	query, args, err := s.sql.
@@ -213,7 +233,7 @@ func (s *Service) ListPublicOutbox(ctx context.Context, userRecordID int64) ([]A
 		From(activitiesTable).
 		Where(squirrel.Eq{activitiesUserIDColumn: userRecordID}).
 		Where(squirrel.Eq{activitiesMailboxColumn: Outbox}).
-		Where(squirrel.Eq{activitiesTypeColumn: "Create"}).
+		Where(squirrel.Eq{activitiesTypeColumn: createActivityType}).
 		ToSql()
 	if err != nil {
 		return nil, fmt.Errorf("failed to build query: %w", err)

@@ -92,6 +92,10 @@ func NewContext(rawValues ...any) Context {
 	return Context{rawValues: rawValues}
 }
 
+const followActivityType = "Follow"
+const undoActivityType = "Undo"
+const createActivityType = "Create"
+
 // A PublicKey is a public key definition as defined by the Security Vocabulary
 // (https://w3c.github.io/vc-data-integrity/vocab/security/vocabulary.html#publicKey).
 //
@@ -169,7 +173,7 @@ func newAcceptActivity(actorID string, activityID string) Activity[string] {
 func NewCreateActivity[T any](actor Actorish, object T, published string, to, cc []string) Activity[T] {
 	return Activity[T]{
 		Context:   NewContext(ActivityStreamsContext),
-		Type:      "Create",
+		Type:      createActivityType,
 		ID:        ActorID(actor) + "/outbox/" + uuid.NewString(),
 		Actor:     ActorID(actor),
 		Object:    object,
