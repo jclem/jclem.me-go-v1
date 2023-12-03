@@ -19,10 +19,11 @@ const SecurityContext = "https://w3id.org/security/v1"
 
 // MastodonContext is the Mastodon context.
 var MastodonContext = map[string]string{ //nolint:gochecknoglobals
-	"toot":         "http://joinmastodon.org/ns#",
-	"discoverable": "toot:discoverable",
-	"Hashtag":      "as:Hashtag",
-	"sensitive":    "as:sensitive",
+	"toot":                      "http://joinmastodon.org/ns#",
+	"discoverable":              "toot:discoverable",
+	"Hashtag":                   "as:Hashtag",
+	"sensitive":                 "as:sensitive",
+	"manuallyApprovesFollowers": "as:manuallyApprovesFollowers",
 }
 
 // A Context is a JSON-LD context.
@@ -203,19 +204,21 @@ func NewNote(actor Actorish, content string, to, cc []string) Note {
 //
 // SEE https://www.w3.org/TR/activitypub/#actor-objects
 type Actor struct {
-	Context           Context   `json:"@context"`
-	Type              string    `json:"type"`
-	ID                string    `json:"id"`
-	Inbox             string    `json:"inbox,omitempty"`
-	Outbox            string    `json:"outbox,omitempty"`
-	Following         string    `json:"following,omitempty"`
-	Followers         string    `json:"followers,omitempty"`
-	PreferredUsername string    `json:"preferredUsername,omitempty"`
-	Name              string    `json:"name,omitempty"`
-	Summary           string    `json:"summary,omitempty"`
-	URL               string    `json:"url,omitempty"`
-	Icon              Image     `json:"icon,omitempty"`
-	PublicKey         PublicKey `json:"publicKey,omitempty"`
+	Context                   Context   `json:"@context"`
+	Type                      string    `json:"type"`
+	ID                        string    `json:"id"`
+	Inbox                     string    `json:"inbox,omitempty"`
+	Outbox                    string    `json:"outbox,omitempty"`
+	Following                 string    `json:"following,omitempty"`
+	Followers                 string    `json:"followers,omitempty"`
+	PreferredUsername         string    `json:"preferredUsername,omitempty"`
+	Name                      string    `json:"name,omitempty"`
+	Summary                   string    `json:"summary,omitempty"`
+	URL                       string    `json:"url,omitempty"`
+	Discoverable              bool      `json:"discoverable"`
+	ManuallyApprovesFollowers bool      `json:"manuallyApprovesFollowers"`
+	Icon                      Image     `json:"icon,omitempty"`
+	PublicKey                 PublicKey `json:"publicKey,omitempty"`
 }
 
 // An Actorish is an interface for types that can be actors (they have
@@ -272,17 +275,19 @@ func ActorFromUser(user Actorish, pubKey identity.SigningKey) (Actor, error) {
 	}
 
 	return Actor{
-		Context:           NewContext(ActivityStreamsContext, SecurityContext),
-		Type:              "Person",
-		ID:                ActorID(user),
-		Inbox:             ActorInbox(user),
-		Outbox:            ActorOutbox(user),
-		Followers:         ActorFollowers(user),
-		Following:         ActorFollowing(user),
-		PreferredUsername: username,
-		Name:              user.GetName(),
-		Summary:           user.GetSummary(),
-		Icon:              icon,
+		Context:                   NewContext(ActivityStreamsContext, SecurityContext),
+		Type:                      "Person",
+		ID:                        ActorID(user),
+		Inbox:                     ActorInbox(user),
+		Outbox:                    ActorOutbox(user),
+		Followers:                 ActorFollowers(user),
+		Following:                 ActorFollowing(user),
+		PreferredUsername:         username,
+		Name:                      user.GetName(),
+		Summary:                   user.GetSummary(),
+		Icon:                      icon,
+		Discoverable:              true,
+		ManuallyApprovesFollowers: false,
 		PublicKey: PublicKey{
 			ID:           ActorPublicKeyID(user),
 			Owner:        ActorID(user),
