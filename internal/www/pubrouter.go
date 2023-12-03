@@ -8,10 +8,8 @@ import (
 	"io"
 	"net/http"
 	"regexp"
-	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	ap "github.com/jclem/jclem.me/internal/activitypub"
 	"github.com/jclem/jclem.me/internal/activitypub/identity"
@@ -80,59 +78,37 @@ func (p *pubRouter) createActivity(w http.ResponseWriter, r *http.Request) {
 	var note ap.Note
 	if err := json.NewDecoder(r.Body).Decode(&note); err != nil {
 		returnError(r.Context(), w, err, "error decoding note")
-
 		return
 	}
 
 	if note.Type != "Note" {
 		returnCodeError(r.Context(), w, http.StatusUnprocessableEntity, "only Note activities are supported")
-
 		return
 	}
 
 	if !note.Context.Contains(ap.ActivityStreamsContext) {
 		returnCodeError(r.Context(), w, http.StatusUnprocessableEntity, "only ActivityStreams context is supported")
-
 		return
 	}
 
-	note.Context = ap.NewContext(ap.ActivityStreamsContext, ap.MastodonContext)
-	note.ID = fmt.Sprintf("%s/notes/%s", ap.ActorID(user), uuid.New())
-	note.AttributedTo = ap.ActorID(user)
-	note.Type = "Note"
-	note.Published = time.Now().UTC().Format(http.TimeFormat)
-	note.To = []string{ap.ActivityStreamsContext + "#Public"}
-	note.Cc = []string{ap.ActorFollowers(user)}
-
-	activity := ap.Activity[ap.Note]{
-		Context:   ap.NewContext(ap.ActivityStreamsContext),
-		Type:      "Create",
-		ID:        fmt.Sprintf("%s/outbox/%s", ap.ActorID(user), uuid.New()),
-		Actor:     ap.ActorID(user),
-		Object:    note,
-		Published: note.Published,
-		To:        note.To,
-		Cc:        note.Cc,
-	}
+	note = ap.NewNote(user, note.Content, note.To, note.Cc)
+	activity := ap.NewCreateActivity(user, note, note.Published, note.To, note.Cc)
 
 	j, err := json.Marshal(activity)
 	if err != nil {
 		returnError(r.Context(), w, err, "error encoding activity")
-
 		return
 	}
 
 	ar, err := p.pub.CreateActivity(r.Context(), user.ID, ap.Outbox, ap.ActivityStreamsContext, activity.Type, activity.ID, j)
 	if err != nil {
 		returnError(r.Context(), w, err, "error creating activity")
-
 		return
 	}
 
 	a, err := ap.ActivityRecordToActivity[ap.Note](ar)
 	if err != nil {
 		returnError(r.Context(), w, err, "error converting activity record to activity")
-
 		return
 	}
 
@@ -141,7 +117,6 @@ func (p *pubRouter) createActivity(w http.ResponseWriter, r *http.Request) {
 
 	if err := json.NewEncoder(w).Encode(a); err != nil {
 		returnError(r.Context(), w, err, "error encoding activity")
-
 		return
 	}
 }
@@ -152,21 +127,18 @@ func (p *pubRouter) acceptActivity(w http.ResponseWriter, r *http.Request) {
 	b, err := io.ReadAll(r.Body)
 	if err != nil {
 		returnError(r.Context(), w, err, "error reading body")
-
 		return
 	}
 
 	var activity activityInput
 	if err := json.Unmarshal(b, &activity); err != nil {
 		returnError(r.Context(), w, err, "error decoding activity")
-
 		return
 	}
 
 	ar, err := p.pub.CreateActivity(r.Context(), user.ID, ap.Inbox, activity.Context, activity.Type, activity.ID, b)
 	if err != nil {
 		returnError(r.Context(), w, err, "error creating activity")
-
 		return
 	}
 
@@ -174,7 +146,6 @@ func (p *pubRouter) acceptActivity(w http.ResponseWriter, r *http.Request) {
 
 	if err := json.NewEncoder(w).Encode(ar); err != nil {
 		returnError(r.Context(), w, err, "error encoding activity")
-
 		return
 	}
 }
@@ -185,20 +156,17 @@ func (p *pubRouter) getUser(w http.ResponseWriter, r *http.Request) {
 	pubKey, err := p.id.GetPublicKey(r.Context(), user.ID)
 	if err != nil {
 		returnError(r.Context(), w, err, "error getting public key")
-
 		return
 	}
 
 	actor, err := ap.ActorFromUser(user, pubKey)
 	if err != nil {
 		returnCodeError(r.Context(), w, http.StatusNotFound, fmt.Sprintf("user not found: %q", user.Username))
-
 		return
 	}
 
 	if err := json.NewEncoder(w).Encode(actor); err != nil {
 		returnError(r.Context(), w, err, "error encoding actor")
-
 		return
 	}
 }
@@ -214,7 +182,6 @@ func (p *pubRouter) getOutbox(w http.ResponseWriter, r *http.Request) {
 	items, err := p.pub.ListPublicOutbox(r.Context(), user.ID)
 	if err != nil {
 		returnError(r.Context(), w, err, "error listing outbox")
-
 		return
 	}
 
@@ -224,7 +191,6 @@ func (p *pubRouter) getOutbox(w http.ResponseWriter, r *http.Request) {
 		itemObject, err := ap.ActivityRecordToActivity[ap.Note](item)
 		if err != nil {
 			returnError(r.Context(), w, err, "error converting activity record to activity")
-
 			return
 		}
 
@@ -234,7 +200,6 @@ func (p *pubRouter) getOutbox(w http.ResponseWriter, r *http.Request) {
 	collection := ap.NewCollection(ap.ActorOutbox(user), itemObjects)
 	if err := json.NewEncoder(w).Encode(collection); err != nil {
 		returnError(r.Context(), w, err, "error encoding actor")
-
 		return
 	}
 }
@@ -245,7 +210,6 @@ func (p *pubRouter) listFollowers(w http.ResponseWriter, r *http.Request) {
 	followers, err := p.pub.ListFollowers(r.Context(), user.ID)
 	if err != nil {
 		returnError(r.Context(), w, err, "error listing followers")
-
 		return
 	}
 
@@ -257,7 +221,6 @@ func (p *pubRouter) listFollowers(w http.ResponseWriter, r *http.Request) {
 	collection := ap.NewCollection(ap.ActorFollowers(user), followerIDs)
 	if err := json.NewEncoder(w).Encode(collection); err != nil {
 		returnError(r.Context(), w, err, "error encoding collection")
-
 		return
 	}
 }
@@ -268,7 +231,6 @@ func (p *pubRouter) listFollowing(w http.ResponseWriter, r *http.Request) {
 	collection := ap.NewCollection(ap.ActorFollowing(user), []string{})
 	if err := json.NewEncoder(w).Encode(collection); err != nil {
 		returnError(r.Context(), w, err, "error encoding collection")
-
 		return
 	}
 }
@@ -279,20 +241,17 @@ func (p *pubRouter) handleWebfinger(w http.ResponseWriter, r *http.Request) {
 	resource := r.URL.Query().Get("resource")
 	if resource == "" {
 		returnCodeError(r.Context(), w, http.StatusBadRequest, "missing resource parameter")
-
 		return
 	}
 
 	parts := webfingerResourceRegex.FindStringSubmatch(resource)
 	if len(parts) != 3 {
 		returnCodeError(r.Context(), w, http.StatusBadRequest, "invalid resource parameter")
-
 		return
 	}
 
 	if domain := parts[2]; domain != ap.Domain {
 		returnCodeError(r.Context(), w, http.StatusNotFound, "user not found")
-
 		return
 	}
 
@@ -302,12 +261,10 @@ func (p *pubRouter) handleWebfinger(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, identity.ErrUserNotFound) {
 			returnCodeError(r.Context(), w, http.StatusNotFound, fmt.Sprintf("user not found: %q", username))
-
 			return
 		}
 
 		returnError(r.Context(), w, err, "error getting user")
-
 		return
 	}
 
@@ -323,7 +280,6 @@ func (p *pubRouter) handleWebfinger(w http.ResponseWriter, r *http.Request) {
 		},
 	}); err != nil {
 		returnError(r.Context(), w, err, "error encoding webfinger response")
-
 		return
 	}
 }
@@ -342,7 +298,6 @@ func (p *pubRouter) ensureUser(next http.Handler) http.Handler {
 		user, err := p.id.GetUserByUsername(r.Context(), username)
 		if err != nil {
 			returnCodeError(r.Context(), w, http.StatusNotFound, fmt.Sprintf("user not found: %q", username))
-
 			return
 		}
 
@@ -359,21 +314,18 @@ func (p *pubRouter) verifyBearerToken(next http.Handler) http.Handler {
 		auth := r.Header.Get("Authorization")
 		if auth == "" {
 			returnCodeError(r.Context(), w, http.StatusUnauthorized, "no authorization header")
-
 			return
 		}
 
 		parts := bearerTokenRegex.FindStringSubmatch(auth)
 		if len(parts) != 2 {
 			returnCodeError(r.Context(), w, http.StatusUnauthorized, "invalid authorization header")
-
 			return
 		}
 
 		user, err := p.id.ValidateAPIKey(r.Context(), parts[1])
 		if err != nil {
 			returnCodeError(r.Context(), w, http.StatusUnauthorized, "invalid authorization header")
-
 			return
 		}
 

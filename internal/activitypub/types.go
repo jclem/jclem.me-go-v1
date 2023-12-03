@@ -3,8 +3,11 @@ package activitypub
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"slices"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/jclem/jclem.me/internal/activitypub/identity"
 )
 
@@ -158,6 +161,20 @@ func newAcceptActivity(actorID string, activityID string) Activity[string] {
 	}
 }
 
+// NewCreateActivity creates a new Create activity.
+func NewCreateActivity[T any](actor Actorish, object T, published string, to, cc []string) Activity[T] {
+	return Activity[T]{
+		Context:   NewContext(ActivityStreamsContext),
+		Type:      "Create",
+		ID:        ActorID(actor) + "/outbox/" + uuid.NewString(),
+		Actor:     ActorID(actor),
+		Object:    object,
+		Published: published,
+		To:        to,
+		Cc:        cc,
+	}
+}
+
 // A Note is an ActivityStreams Note.
 //
 // SEE https://www.w3.org/TR/activitystreams-vocabulary/#dfn-note
@@ -171,6 +188,20 @@ type Note struct {
 	Sensitive    bool     `json:"sensitive"`
 	To           []string `json:"to"`
 	Cc           []string `json:"cc"`
+}
+
+// NewNote creates a new Note.
+func NewNote(actor Actorish, content string, to, cc []string) Note {
+	return Note{
+		Context:      NewContext(ActivityStreamsContext, MastodonContext),
+		Type:         "Note",
+		ID:           ActorID(actor) + "/notes/" + uuid.NewString(),
+		AttributedTo: ActorID(actor),
+		Content:      content,
+		Published:    time.Now().UTC().Format(http.TimeFormat),
+		To:           to,
+		Cc:           cc,
+	}
 }
 
 // An Actorish is an interface for types that can be actors (they have
