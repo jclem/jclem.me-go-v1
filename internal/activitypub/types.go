@@ -78,30 +78,6 @@ func NewContext(rawValues ...any) Context {
 	return Context{rawValues: rawValues}
 }
 
-// An Actor is an ActivityPub actor.
-//
-// We also include Mastodon-specific fields here, such as the public key.
-// Likewise, we ignore some parts of ActivityPub/ActivityStreams, such as
-// natural language support
-// (https://www.w3.org/TR/activitystreams-core/#naturalLanguageValues).
-//
-// SEE https://www.w3.org/TR/activitypub/#actor-objects
-type Actor struct {
-	Context           Context   `json:"@context"`
-	Type              string    `json:"type"`
-	ID                string    `json:"id"`
-	Inbox             string    `json:"inbox"`
-	Outbox            string    `json:"outbox"`
-	Following         string    `json:"following"`
-	Followers         string    `json:"followers"`
-	PreferredUsername string    `json:"preferredUsername"`
-	Name              string    `json:"name"`
-	Summary           string    `json:"summary"`
-	URL               string    `json:"url"`
-	Icon              Image     `json:"icon"`
-	PublicKey         PublicKey `json:"publicKey"`
-}
-
 // A PublicKey is a public key definition as defined by the Security Vocabulary
 // (https://w3c.github.io/vc-data-integrity/vocab/security/vocabulary.html#publicKey).
 //
@@ -136,6 +112,20 @@ type OrderedCollection[T any] struct {
 	First        string  `json:"first,omitempty"`
 	Last         string  `json:"last,omitempty"`
 	OrderedItems []T     `json:"orderedItems,omitempty"`
+}
+
+// NewCollection creates a new OrderedCollection containing the given items.
+func NewCollection[T any](id string, items []T) OrderedCollection[T] {
+	return OrderedCollection[T]{
+		Context: NewContext(
+			ActivityStreamsContext,
+			MastodonContext,
+		),
+		Type:         "OrderedCollection",
+		ID:           id,
+		TotalItems:   len(items),
+		OrderedItems: items,
+	}
 }
 
 // An Activity is an ActivityStreams Activity.
@@ -204,6 +194,30 @@ func NewNote(actor Actorish, content string, to, cc []string) Note {
 	}
 }
 
+// An Actor is an ActivityPub actor.
+//
+// We also include Mastodon-specific fields here, such as the public key.
+// Likewise, we ignore some parts of ActivityPub/ActivityStreams, such as
+// natural language support
+// (https://www.w3.org/TR/activitystreams-core/#naturalLanguageValues).
+//
+// SEE https://www.w3.org/TR/activitypub/#actor-objects
+type Actor struct {
+	Context           Context   `json:"@context"`
+	Type              string    `json:"type"`
+	ID                string    `json:"id"`
+	Inbox             string    `json:"inbox"`
+	Outbox            string    `json:"outbox"`
+	Following         string    `json:"following"`
+	Followers         string    `json:"followers"`
+	PreferredUsername string    `json:"preferredUsername"`
+	Name              string    `json:"name"`
+	Summary           string    `json:"summary"`
+	URL               string    `json:"url"`
+	Icon              Image     `json:"icon"`
+	PublicKey         PublicKey `json:"publicKey"`
+}
+
 // An Actorish is an interface for types that can be actors (they have
 // usernames).
 type Actorish interface {
@@ -267,18 +281,4 @@ func ActorFromUser(user Actorish, pubKey identity.SigningKey) (Actor, error) {
 			PublicKeyPem: pubKey.PEM,
 		},
 	}, nil
-}
-
-// NewCollection creates a new OrderedCollection containing the given items.
-func NewCollection[T any](id string, items []T) OrderedCollection[T] {
-	return OrderedCollection[T]{
-		Context: NewContext(
-			ActivityStreamsContext,
-			MastodonContext,
-		),
-		Type:         "OrderedCollection",
-		ID:           id,
-		TotalItems:   len(items),
-		OrderedItems: items,
-	}
 }
