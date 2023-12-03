@@ -1,19 +1,13 @@
 package activitypub
 
 import (
-	"bytes"
 	"context"
-	"crypto/rsa"
-	"crypto/x509"
 	"encoding/json"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
-	"time"
 
-	"github.com/go-fed/httpsig"
 	"github.com/jclem/jclem.me/internal/activitypub/identity"
 	"github.com/riverqueue/river"
 )
@@ -95,7 +89,7 @@ func (w *HandleFollowWorker) createFollower(ctx context.Context, userRecordID in
 	return nil
 }
 
-func (w *HandleFollowWorker) acceptFollower(ctx context.Context, userRecordID int64, activity ActivityRecord, actorID string) error { //nolint:cyclop
+func (w *HandleFollowWorker) acceptFollower(ctx context.Context, userRecordID int64, activity ActivityRecord, actorID string) error {
 	user, err := w.id.GetUserByID(ctx, userRecordID)
 	if err != nil {
 		return fmt.Errorf("failed to get user: %w", err)
@@ -118,22 +112,9 @@ func (w *HandleFollowWorker) acceptFollower(ctx context.Context, userRecordID in
 		return fmt.Errorf("failed to marshal accept: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, inboxURL, bytes.NewReader(j))
+	req, err := newSignedActivityRequest(ctx, w.id, userRecordID, http.MethodPost, inboxURL, j)
 	if err != nil {
-		return fmt.Errorf("error creating accept request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", ContentType)
-	req.Header.Set("Accept", ContentType)
-	req.Header.Set("Date", time.Now().UTC().Format(http.TimeFormat))
-
-	pk, err := w.id.GetPrivateKey(ctx, userRecordID)
-	if err != nil {
-		return fmt.Errorf("error getting private key: %w", err)
-	}
-
-	if err := signJSONLDRequest(user, pk, req, j); err != nil {
-		return fmt.Errorf("error signing accept request: %w", err)
+		return err
 	}
 
 	resp, err := http.DefaultClient.Do(req)
@@ -159,36 +140,4 @@ func newHandleFollowWorker(pub *Service, id *identity.Service) *HandleFollowWork
 		id:  id,
 		pub: pub,
 	}
-}
-
-func signJSONLDRequest(user identity.User, privateKeyPEM identity.SigningKey, r *http.Request, b []byte) error {
-	prefs := []httpsig.Algorithm{httpsig.RSA_SHA256}
-	digestAlgo := httpsig.DigestSha256
-	headers := []string{httpsig.RequestTarget, "date", "digest"}
-
-	signer, _, err := httpsig.NewSigner(prefs, digestAlgo, headers, httpsig.Signature, 0)
-	if err != nil {
-		return fmt.Errorf("error creating signer: %w", err)
-	}
-
-	block, _ := pem.Decode([]byte(privateKeyPEM.PEM))
-	if block == nil {
-		return errors.New("error decoding private key")
-	}
-
-	pkey, err := x509.ParsePKCS8PrivateKey(block.Bytes)
-	if err != nil {
-		return fmt.Errorf("error parsing private key: %w", err)
-	}
-
-	rsaKey, ok := pkey.(*rsa.PrivateKey)
-	if !ok {
-		return errors.New("private key is not an RSA key")
-	}
-
-	if err := signer.SignRequest(rsaKey, ActorPublicKeyID(user), r, b); err != nil {
-		return fmt.Errorf("error signing request: %w", err)
-	}
-
-	return nil
 }

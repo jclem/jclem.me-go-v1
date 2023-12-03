@@ -3,6 +3,7 @@ package activitypub
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -36,7 +37,7 @@ const (
 )
 
 // CreateInboxActivity creates a new ActivityPub activity record.
-func (s *Service) CreateActivity(ctx context.Context, userRecordID int64, mailbox Mailbox, context, typ, id string, data []byte) (a ActivityRecord, err error) {
+func (s *Service) CreateActivity(ctx context.Context, userRecordID int64, mailbox Mailbox, context, typ, id string, data []byte) (ar ActivityRecord, err error) {
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return ActivityRecord{}, fmt.Errorf("failed to begin transaction: %w", err)
@@ -48,6 +49,71 @@ func (s *Service) CreateActivity(ctx context.Context, userRecordID int64, mailbo
 		}
 	}()
 
+	ar, err = s.insertActivityRecord(ctx, tx, userRecordID, mailbox, context, typ, id, data)
+	if err != nil {
+		return ActivityRecord{}, fmt.Errorf("failed to create activity record: %w", err)
+	}
+
+	if mailbox == Inbox {
+		if err := s.handleInbox(ctx, tx, userRecordID, ar); err != nil {
+			return ActivityRecord{}, fmt.Errorf("failed to handle inbox: %w", err)
+		}
+	} else {
+		if err := s.handleOutbox(ctx, tx, userRecordID, ar); err != nil {
+			return ActivityRecord{}, fmt.Errorf("failed to handle outbox: %w", err)
+		}
+	}
+
+	return ar, nil
+}
+
+func (s *Service) handleInbox(ctx context.Context, tx pgx.Tx, userRecordID int64, ar ActivityRecord) error {
+	if ar.Type != "Follow" {
+		slog.InfoContext(ctx, "ignoring non-follow activity", "activity_id", ar, "activity_type", ar.Type)
+		return nil
+	}
+
+	if _, err := s.river.InsertTx(ctx, tx, HandleFollowArgs{UserRecordID: userRecordID, ActivityID: ar.ID}, nil); err != nil {
+		return fmt.Errorf("failed to insert follow job: %w", err)
+	}
+
+	return nil
+}
+
+func (s *Service) handleOutbox(ctx context.Context, tx pgx.Tx, userRecordID int64, ar ActivityRecord) error {
+	if ar.Type != "Create" {
+		return fmt.Errorf("invalid activity type: %s", ar.Type)
+	}
+
+	var ao Activity[Note]
+	if err := json.Unmarshal(ar.Data, &ao); err != nil {
+		return fmt.Errorf("failed to unmarshal activity data: %w", err)
+	}
+
+	if ao.Object.Type != "Note" {
+		return fmt.Errorf("invalid object type: %s", ao.Object.Type)
+	}
+
+	_, err := s.insertNote(ctx, tx, userRecordID, ao.ID, ao.Object)
+	if err != nil {
+		return fmt.Errorf("failed to create note: %w", err)
+	}
+
+	followers, err := s.ListFollowers(ctx, userRecordID)
+	if err != nil {
+		return fmt.Errorf("failed to list followers: %w", err)
+	}
+
+	for _, follower := range followers {
+		if _, err := s.river.InsertTx(ctx, tx, HandleOutboxArgs{ActivityID: ao.ID, FollowerID: follower.ActorID, UserRecordID: userRecordID}, nil); err != nil {
+			return fmt.Errorf("failed to insert outbox job: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (s *Service) insertActivityRecord(ctx context.Context, tx pgx.Tx, userRecordID int64, mailbox Mailbox, context, typ, id string, data []byte) (ActivityRecord, error) {
 	now := time.Now().UTC()
 
 	query, args, err := s.sql.
@@ -60,23 +126,38 @@ func (s *Service) CreateActivity(ctx context.Context, userRecordID int64, mailbo
 		return ActivityRecord{}, fmt.Errorf("failed to build query: %w", err)
 	}
 
+	var a ActivityRecord
 	if err := tx.QueryRow(ctx, query, args...).Scan(a.scannableFields()...); err != nil {
 		return ActivityRecord{}, fmt.Errorf("failed to insert activity: %w", err)
 	}
 
-	switch a.Type {
-	case "Follow":
-		if _, err := s.river.InsertTx(ctx, tx, HandleFollowArgs{UserRecordID: userRecordID, ActivityID: a.ID}, nil); err != nil {
-			return ActivityRecord{}, fmt.Errorf("failed to insert follow job: %w", err)
-		}
-	case "Create":
-		if _, err := s.river.InsertTx(ctx, tx, HandleCreateArgs{UserRecordID: userRecordID, ActivityID: a.ID}, nil); err != nil {
-			return ActivityRecord{}, fmt.Errorf("failed to insert create job: %w", err)
-		}
-	}
-
 	return a, nil
 }
+
+func (s *Service) insertNote(ctx context.Context, tx pgx.Tx, userRecordID int64, activityID string, note Note) (NoteRecord, error) {
+	now := time.Now().UTC()
+
+	var n NoteRecord
+
+	query, args, err := s.sql.
+		Insert(notesTable).
+		Columns(notesFieldsWritable...).
+		Values(userRecordID, activityID, note.ID, note.Content, note.Published, note.To, note.Cc, now, now).
+		Suffix("RETURNING " + strings.Join(notesFields, ", ")).
+		ToSql()
+	if err != nil {
+		return NoteRecord{}, fmt.Errorf("failed to build query: %w", err)
+	}
+
+	if err := tx.QueryRow(ctx, query, args...).Scan(n.scannableFields()...); err != nil {
+		return NoteRecord{}, fmt.Errorf("failed to insert note: %w", err)
+	}
+
+	return n, nil
+}
+
+// ErrActivityNotFound is returned when an activity is not found.
+var ErrActivityNotFound = errors.New("activity not found")
 
 // GetActivityByID gets an activity by its object ID.
 func (s *Service) GetActivityByID(ctx context.Context, userRecordID int64, id string) (ActivityRecord, error) {
@@ -92,6 +173,10 @@ func (s *Service) GetActivityByID(ctx context.Context, userRecordID int64, id st
 
 	var a ActivityRecord
 	if err := s.pool.QueryRow(ctx, query, args...).Scan(a.scannableFields()...); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ActivityRecord{}, ErrActivityNotFound
+		}
+
 		return ActivityRecord{}, fmt.Errorf("failed to get activity by ID: %w", err)
 	}
 
@@ -212,29 +297,6 @@ func (s *Service) ListFollowers(ctx context.Context, userRecordID int64) ([]Foll
 	return followers, nil
 }
 
-// CreateNote creates a new note record.
-func (s *Service) CreateNote(ctx context.Context, userRecordID int64, activityID string, note Note) (NoteRecord, error) {
-	now := time.Now().UTC()
-
-	var n NoteRecord
-
-	query, args, err := s.sql.
-		Insert(notesTable).
-		Columns(notesFieldsWritable...).
-		Values(userRecordID, activityID, note.ID, note.Content, note.Published, note.To, note.Cc, now, now).
-		Suffix("RETURNING " + strings.Join(notesFields, ", ")).
-		ToSql()
-	if err != nil {
-		return NoteRecord{}, fmt.Errorf("failed to build query: %w", err)
-	}
-
-	if err := s.pool.QueryRow(ctx, query, args...).Scan(n.scannableFields()...); err != nil {
-		return NoteRecord{}, fmt.Errorf("failed to insert note: %w", err)
-	}
-
-	return n, nil
-}
-
 // NewService creates a new Service.
 func NewService(ctx context.Context, pool *pgxpool.Pool, id *identity.Service) (*Service, error) {
 	s := Service{
@@ -243,13 +305,8 @@ func NewService(ctx context.Context, pool *pgxpool.Pool, id *identity.Service) (
 	}
 
 	workers := river.NewWorkers()
-	if err := river.AddWorkerSafely(workers, newHandleFollowWorker(&s, id)); err != nil {
-		return nil, fmt.Errorf("failed to add worker: %w", err)
-	}
-
-	if err := river.AddWorkerSafely(workers, newHandleCreateWorker(&s)); err != nil {
-		return nil, fmt.Errorf("failed to add worker: %w", err)
-	}
+	river.AddWorker(workers, newHandleFollowWorker(&s, id))
+	river.AddWorker(workers, newHandleOutboxWorker(&s, id))
 
 	riverClient, err := river.NewClient(riverpgxv5.New(pool), &river.Config{
 		Queues: map[string]river.QueueConfig{
