@@ -398,7 +398,7 @@ func (p *pubRouter) getUser(w http.ResponseWriter, r *http.Request) {
 func writeResponse(w http.ResponseWriter, r *http.Request, resp interface{}) {
 	enc := json.NewEncoder(w)
 	if strings.Contains(r.Header.Get("Accept"), "text/html") {
-		enc.SetIndent("", "  ")
+		enc.SetIndent("", "\t")
 	}
 
 	if err := enc.Encode(resp); err != nil {
