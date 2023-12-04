@@ -37,7 +37,7 @@ type HandleOutboxWorker struct {
 //
 // It functions by fetching newly-created activity and delivering it to the
 // inbox of the follower denoted in the job.
-func (w *HandleOutboxWorker) Work(ctx context.Context, job *river.Job[HandleOutboxArgs]) error { //nolint:cyclop
+func (w *HandleOutboxWorker) Work(ctx context.Context, job *river.Job[HandleOutboxArgs]) error {
 	activity, err := w.pub.GetActivityByID(ctx, job.Args.UserRecordID, job.Args.ActivityID)
 	if err != nil {
 		err = fmt.Errorf("failed to get activity: %w", err)

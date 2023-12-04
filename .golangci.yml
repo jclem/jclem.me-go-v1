@@ -1,5 +1,18 @@
 linters:
-  enable-all: true
+  presets:
+    - bugs
+    - comment
+    # - complexity # limits cyclomatic complexity—typically results in hard-to-follow code
+    - error
+    - format
+    - import
+    - metalinter
+    - module
+    - performance
+    - sql
+    - style
+    - test
+    - unused
 
   disable:
     - depguard # enforces dependency allow list; not using allow list
@@ -16,15 +29,3 @@ linters:
     - tagliatelle # enforces tag name style; often incorrect; bad
     - varnamelen # limits variable name length; annoying
     - wsl # tedious whitespace rules; annoying
-
-    # Deprecated:
-    - deadcode
-    - exhaustivestruct
-    - golint
-    - ifshort
-    - interfacer
-    - maligned
-    - nosnakecase
-    - scopelint
-    - structcheck
-    - varcheck

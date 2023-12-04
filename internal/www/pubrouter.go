@@ -142,58 +142,7 @@ func (p *pubRouter) acceptActivity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	actor, err := ap.GetActor(r.Context(), activity.Actor)
-	if err != nil {
-		returnError(r.Context(), w, err, "error getting actor")
-		return
-	}
-
-	key, _ := pem.Decode([]byte(actor.PublicKey.PublicKeyPem))
-	if key == nil {
-		returnError(r.Context(), w, errors.New("error decoding public key"), "error decoding public key")
-		return
-	}
-
-	pkeyAny, err := x509.ParsePKIXPublicKey(key.Bytes)
-	if err != nil {
-		returnError(r.Context(), w, err, "error parsing public key")
-		return
-	}
-
-	pubKey, ok := pkeyAny.(crypto.PublicKey)
-	if !ok {
-		returnError(r.Context(), w, errors.New("error casting public key"), "error casting public key")
-		return
-	}
-
-	verifier, err := httpsig.NewVerifier(r)
-	if err != nil {
-		returnError(r.Context(), w, err, "error creating verifier")
-		return
-	}
-
-	if actor.PublicKey.ID != verifier.KeyId() {
-		returnCodeError(r.Context(), w, http.StatusUnauthorized, "invalid key id")
-		return
-	}
-
-	algorithmRegex := regexp.MustCompile(`algorithm="([^"]+)"`)
-	algorithm := algorithmRegex.FindStringSubmatch(r.Header.Get("Signature"))
-	if len(algorithm) != 2 {
-		returnCodeError(r.Context(), w, http.StatusUnauthorized, "invalid algorithm")
-		return
-	}
-
-	var algo httpsig.Algorithm
-	switch strings.ToLower(algorithm[1]) {
-	case "rsa-sha256":
-		algo = httpsig.RSA_SHA256
-	default:
-		returnCodeError(r.Context(), w, http.StatusUnauthorized, "invalid algorithm")
-		return
-	}
-
-	if err := verifier.Verify(pubKey, algo); err != nil {
+	if err := p.verifySignedRequest(r, activity.Actor); err != nil {
 		returnError(r.Context(), w, err, "error verifying request")
 		return
 	}
@@ -208,27 +157,6 @@ func (p *pubRouter) acceptActivity(w http.ResponseWriter, r *http.Request) {
 
 	if err := json.NewEncoder(w).Encode(ar); err != nil {
 		returnError(r.Context(), w, err, "error encoding activity")
-		return
-	}
-}
-
-func (p *pubRouter) getUser(w http.ResponseWriter, r *http.Request) {
-	user := r.Context().Value(userContextKey).(identity.User) //nolint:forceTypeAssert
-
-	pubKey, err := p.id.GetPublicKey(r.Context(), user.ID)
-	if err != nil {
-		returnError(r.Context(), w, err, "error getting public key")
-		return
-	}
-
-	actor, err := ap.ActorFromUser(user, pubKey)
-	if err != nil {
-		returnCodeError(r.Context(), w, http.StatusNotFound, fmt.Sprintf("user not found: %q", user.Username))
-		return
-	}
-
-	if err := json.NewEncoder(w).Encode(actor); err != nil {
-		returnError(r.Context(), w, err, "error encoding actor")
 		return
 	}
 }
@@ -394,4 +322,78 @@ func (p *pubRouter) verifyBearerToken(next http.Handler) http.Handler {
 		ctx := context.WithValue(r.Context(), userContextKey, user)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func (p *pubRouter) verifySignedRequest(r *http.Request, actorID string) error {
+	actor, err := ap.GetActor(r.Context(), actorID)
+	if err != nil {
+		return fmt.Errorf("error getting actor: %w", err)
+	}
+
+	key, _ := pem.Decode([]byte(actor.PublicKey.PublicKeyPem))
+	if key == nil {
+		return errors.New("error decoding public key")
+	}
+
+	pkeyAny, err := x509.ParsePKIXPublicKey(key.Bytes)
+	if err != nil {
+		return fmt.Errorf("error parsing public key: %w", err)
+	}
+
+	pubKey, knownAlgo := pkeyAny.(crypto.PublicKey)
+	if !knownAlgo {
+		return errors.New("error casting public key")
+	}
+
+	verifier, err := httpsig.NewVerifier(r)
+	if err != nil {
+		return fmt.Errorf("error creating verifier: %w", err)
+	}
+
+	if actor.PublicKey.ID != verifier.KeyId() {
+		return errors.New("invalid key id")
+	}
+
+	algorithmRegex := regexp.MustCompile(`algorithm="([^"]+)"`)
+	algorithm := algorithmRegex.FindStringSubmatch(r.Header.Get("Signature"))
+	if len(algorithm) != 2 {
+		return errors.New("invalid algorithm")
+	}
+
+	algoName := strings.ToLower(algorithm[1])
+
+	algo, knownAlgo := map[string]httpsig.Algorithm{
+		"rsa-sha256": httpsig.RSA_SHA256,
+	}[algoName]
+
+	if !knownAlgo {
+		return errors.New("invalid algorithm")
+	}
+
+	if err := verifier.Verify(pubKey, algo); err != nil {
+		return fmt.Errorf("error verifying request: %w", err)
+	}
+
+	return nil
+}
+
+func (p *pubRouter) getUser(w http.ResponseWriter, r *http.Request) {
+	user := r.Context().Value(userContextKey).(identity.User) //nolint:forceTypeAssert
+
+	pubKey, err := p.id.GetPublicKey(r.Context(), user.ID)
+	if err != nil {
+		returnError(r.Context(), w, err, "error getting public key")
+		return
+	}
+
+	actor, err := ap.ActorFromUser(user, pubKey)
+	if err != nil {
+		returnCodeError(r.Context(), w, http.StatusNotFound, fmt.Sprintf("user not found: %q", user.Username))
+		return
+	}
+
+	if err := json.NewEncoder(w).Encode(actor); err != nil {
+		returnError(r.Context(), w, err, "error encoding actor")
+		return
+	}
 }
