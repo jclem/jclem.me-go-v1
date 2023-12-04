@@ -13,12 +13,13 @@ import (
 
 	"github.com/go-fed/httpsig"
 	"github.com/jclem/jclem.me/internal/activitypub/identity"
+	"github.com/jclem/jclem.me/internal/database"
 )
 
 func newSignedActivityRequest(
 	ctx context.Context,
 	id *identity.Service,
-	userRecordID int64,
+	userRecordID database.ULID,
 	method string,
 	url string,
 	body []byte,

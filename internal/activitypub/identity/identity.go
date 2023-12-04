@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jclem/jclem.me/internal/activitypub/orderedmap"
+	"github.com/jclem/jclem.me/internal/database"
 )
 
 // A Service handles identity requests.
@@ -25,7 +27,7 @@ type Service struct {
 var ErrUserNotFound = fmt.Errorf("user not found")
 
 // GetUserByID gets a user by ID.
-func (s *Service) GetUserByID(ctx context.Context, id int64) (User, error) {
+func (s *Service) GetUserByID(ctx context.Context, id database.ULID) (User, error) {
 	query, args, err := s.sql.
 		Select(usersFields...).
 		From(usersTable).
@@ -81,16 +83,16 @@ const (
 var ErrSigningKeyNotFound = fmt.Errorf("signing key not found")
 
 // GetPublicKey gets a user's public signing key.
-func (s *Service) GetPublicKey(ctx context.Context, userID int64) (SigningKey, error) {
+func (s *Service) GetPublicKey(ctx context.Context, userID database.ULID) (SigningKey, error) {
 	return s.getSigningKey(ctx, userID, keyKindPublic)
 }
 
 // GetPrivateKey gets a user's private signing key.
-func (s *Service) GetPrivateKey(ctx context.Context, userID int64) (SigningKey, error) {
+func (s *Service) GetPrivateKey(ctx context.Context, userID database.ULID) (SigningKey, error) {
 	return s.getSigningKey(ctx, userID, keyKindPrivate)
 }
 
-func (s *Service) getSigningKey(ctx context.Context, userID int64, kind keyKind) (SigningKey, error) {
+func (s *Service) getSigningKey(ctx context.Context, userID database.ULID, kind keyKind) (SigningKey, error) {
 	query, args, err := s.sql.
 		Select(signingKeysFields...).
 		From(signingKeysTable).
@@ -106,6 +108,8 @@ func (s *Service) getSigningKey(ctx context.Context, userID int64, kind keyKind)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return SigningKey{}, ErrSigningKeyNotFound
 		}
+
+		slog.InfoContext(ctx, "error", "userID", userID)
 
 		return SigningKey{}, fmt.Errorf("could not query row: %w", err)
 	}
@@ -181,12 +185,12 @@ var signingKeysFields = []string{ //nolint:gochecknoglobals
 
 // A SigningKey is a public key in PEM format.
 type SigningKey struct {
-	ID        int64     `json:"id"`
-	UserID    int64     `json:"user_id"`
-	Kind      string    `json:"kind"`
-	PEM       string    `json:"pem"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID        int64         `json:"id"`
+	UserID    database.ULID `json:"user_id"`
+	Kind      string        `json:"kind"`
+	PEM       string        `json:"pem"`
+	CreatedAt time.Time     `json:"created_at"`
+	UpdatedAt time.Time     `json:"updated_at"`
 }
 
 func (k *SigningKey) scannableFields() []any {
@@ -225,7 +229,7 @@ var usersFields = []string{ //nolint:gochecknoglobals
 
 // A User is a user of the system.
 type User struct {
-	ID        int64                 `json:"id"`
+	ID        database.ULID         `json:"id"`
 	Email     string                `json:"email"`
 	Username  string                `json:"username"`
 	Summary   string                `json:"summary"`
@@ -292,11 +296,11 @@ var apiKeysFields = []string{ //nolint:gochecknoglobals
 
 // An APIKey is a key used to verify a user's API requests.
 type APIKey struct {
-	ID        int64     `json:"id"`
-	UserID    int64     `json:"user_id"`
-	Value     string    `json:"value"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID        int64         `json:"id"`
+	UserID    database.ULID `json:"user_id"`
+	Value     string        `json:"value"`
+	CreatedAt time.Time     `json:"created_at"`
+	UpdatedAt time.Time     `json:"updated_at"`
 }
 
 func (a *APIKey) scannableFields() []any {

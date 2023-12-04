@@ -14,6 +14,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jclem/jclem.me/internal/activitypub/identity"
+	"github.com/jclem/jclem.me/internal/database"
+	"github.com/jclem/jclem.me/internal/www/config"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 )
@@ -37,7 +39,7 @@ const (
 )
 
 // CreateInboxActivity creates a new ActivityPub activity record.
-func (s *Service) CreateActivity(ctx context.Context, userRecordID int64, mailbox Mailbox, context, typ, id string, data []byte) (ar ActivityRecord, err error) {
+func (s *Service) CreateActivity(ctx context.Context, userRecordID database.ULID, mailbox Mailbox, context, typ, id string, data []byte) (ar ActivityRecord, err error) {
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return ActivityRecord{}, fmt.Errorf("failed to begin transaction: %w", err)
@@ -69,7 +71,7 @@ func (s *Service) CreateActivity(ctx context.Context, userRecordID int64, mailbo
 
 var acceptableActivities = []string{followActivityType, undoActivityType} //nolint:gochecknoglobals
 
-func (s *Service) handleInbox(ctx context.Context, tx pgx.Tx, userRecordID int64, ar ActivityRecord) error {
+func (s *Service) handleInbox(ctx context.Context, tx pgx.Tx, userRecordID database.ULID, ar ActivityRecord) error {
 	if !slices.Contains(acceptableActivities, ar.Type) {
 		slog.InfoContext(ctx, "ignoring non-follow activity", "activity_id", ar, "activity_type", ar.Type)
 		return nil
@@ -82,7 +84,7 @@ func (s *Service) handleInbox(ctx context.Context, tx pgx.Tx, userRecordID int64
 	return nil
 }
 
-func (s *Service) handleOutbox(ctx context.Context, tx pgx.Tx, userRecordID int64, ar ActivityRecord) error {
+func (s *Service) handleOutbox(ctx context.Context, tx pgx.Tx, userRecordID database.ULID, ar ActivityRecord) error {
 	if ar.Type != createActivityType {
 		return fmt.Errorf("invalid activity type: %s", ar.Type)
 	}
@@ -115,13 +117,18 @@ func (s *Service) handleOutbox(ctx context.Context, tx pgx.Tx, userRecordID int6
 	return nil
 }
 
-func (s *Service) insertActivityRecord(ctx context.Context, tx pgx.Tx, userRecordID int64, mailbox Mailbox, context, typ, id string, data []byte) (ActivityRecord, error) {
+func (s *Service) insertActivityRecord(ctx context.Context, tx pgx.Tx, userRecordID database.ULID, mailbox Mailbox, context, typ, id string, data []byte) (ActivityRecord, error) {
 	now := time.Now().UTC()
+
+	// Extract generated ULID from the activity object's object ID, which is a URL.
+	// The ULID is the last segment of the URL.
+	parts := strings.Split(id, "/")
+	activityRecordID := parts[len(parts)-1]
 
 	query, args, err := s.sql.
 		Insert(activitiesTable).
 		Columns(activitiesFieldsWritable...).
-		Values(userRecordID, mailbox, context, typ, id, data, now, now).
+		Values(activityRecordID, userRecordID, mailbox, context, typ, id, data, now, now).
 		Suffix("RETURNING " + strings.Join(activitiesFields, ", ")).
 		ToSql()
 	if err != nil {
@@ -136,15 +143,20 @@ func (s *Service) insertActivityRecord(ctx context.Context, tx pgx.Tx, userRecor
 	return a, nil
 }
 
-func (s *Service) insertNote(ctx context.Context, tx pgx.Tx, userRecordID int64, activityID string, note Note) (NoteRecord, error) {
+func (s *Service) insertNote(ctx context.Context, tx pgx.Tx, userRecordID database.ULID, activityID string, note Note) (NoteRecord, error) {
 	now := time.Now().UTC()
 
 	var n NoteRecord
 
+	// Extract generated ULID from the note object's object ID, which is a URL.
+	// The ULID is the last segment of the URL.
+	parts := strings.Split(note.ID, "/")
+	noteRecordID := parts[len(parts)-1]
+
 	query, args, err := s.sql.
 		Insert(notesTable).
 		Columns(notesFieldsWritable...).
-		Values(userRecordID, activityID, note.ID, note.Content, note.Published, note.To, note.Cc, now, now).
+		Values(noteRecordID, userRecordID, activityID, note.ID, note.Content, note.Published, note.To, note.Cc, now, now).
 		Suffix("RETURNING " + strings.Join(notesFields, ", ")).
 		ToSql()
 	if err != nil {
@@ -162,7 +174,7 @@ func (s *Service) insertNote(ctx context.Context, tx pgx.Tx, userRecordID int64,
 var ErrActivityNotFound = errors.New("activity not found")
 
 // GetActivityByID gets an activity by its object ID.
-func (s *Service) GetActivityByID(ctx context.Context, userRecordID int64, id string) (ActivityRecord, error) {
+func (s *Service) GetActivityByID(ctx context.Context, userRecordID database.ULID, id string) (ActivityRecord, error) {
 	query, args, err := s.sql.
 		Select(activitiesFields...).
 		From(activitiesTable).
@@ -186,7 +198,7 @@ func (s *Service) GetActivityByID(ctx context.Context, userRecordID int64, id st
 }
 
 // CreateFollower creates a new follower record.
-func (s *Service) CreateFollower(ctx context.Context, userRecordID int64, actorID, activityID string) (FollowerRecord, error) {
+func (s *Service) CreateFollower(ctx context.Context, userRecordID database.ULID, actorID, activityID string) (FollowerRecord, error) {
 	now := time.Now().UTC()
 
 	var f FollowerRecord
@@ -209,7 +221,7 @@ func (s *Service) CreateFollower(ctx context.Context, userRecordID int64, actorI
 }
 
 // DeleteFollower deletes a follower record.
-func (s *Service) DeleteFollower(ctx context.Context, userRecordID int64, actorID string) error {
+func (s *Service) DeleteFollower(ctx context.Context, userRecordID database.ULID, actorID string) error {
 	query, args, err := s.sql.
 		Delete(followersTable).
 		Where(squirrel.Eq{followersUserIDColumn: userRecordID}).
@@ -227,7 +239,7 @@ func (s *Service) DeleteFollower(ctx context.Context, userRecordID int64, actorI
 }
 
 // ListPublicOutbox lists all public outbox activity.
-func (s *Service) ListPublicOutbox(ctx context.Context, userRecordID int64) ([]ActivityRecord, error) {
+func (s *Service) ListPublicOutbox(ctx context.Context, userRecordID database.ULID) ([]ActivityRecord, error) {
 	query, args, err := s.sql.
 		Select(activitiesFields...).
 		From(activitiesTable).
@@ -284,7 +296,7 @@ func (s *Service) ListPublicOutbox(ctx context.Context, userRecordID int64) ([]A
 }
 
 // ListFollowers lists all followers.
-func (s *Service) ListFollowers(ctx context.Context, userRecordID int64) ([]FollowerRecord, error) {
+func (s *Service) ListFollowers(ctx context.Context, userRecordID database.ULID) ([]FollowerRecord, error) {
 	query, args, err := s.sql.
 		Select(followersFields...).
 		From(followersTable).
@@ -338,8 +350,10 @@ func NewService(ctx context.Context, pool *pgxpool.Pool, id *identity.Service) (
 		return nil, fmt.Errorf("failed to create river client: %w", err)
 	}
 
-	if err := riverClient.Start(ctx); err != nil {
-		return nil, fmt.Errorf("failed to start river client: %w", err)
+	if config.RunWorkers() {
+		if err := riverClient.Start(ctx); err != nil {
+			return nil, fmt.Errorf("failed to start river client: %w", err)
+		}
 	}
 
 	s.river = riverClient
@@ -369,15 +383,7 @@ var activitiesFields = []string{ //nolint:gochecknoglobals
 	activitiesCreatedAtColumn,
 	activitiesUpdatedAtColumn}
 
-var activitiesFieldsWritable = []string{ //nolint:gochecknoglobals
-	activitiesUserIDColumn,
-	activitiesMailboxColumn,
-	activitiesContextColumn,
-	activitiesTypeColumn,
-	activitiesIDColumn,
-	activitiesDataColumn,
-	activitiesCreatedAtColumn,
-	activitiesUpdatedAtColumn}
+var activitiesFieldsWritable = activitiesFields //nolint:gochecknoglobals
 
 // An ActivityRecord is a database record containing an ActivityPub activity.
 // SEE: https://www.w3.org/TR/activitystreams-vocabulary/#dfn-activity
@@ -484,16 +490,7 @@ var notesFields = []string{ //nolint:gochecknoglobals
 	notesCreatedAtColumn,
 	notesUpdatedAtColumn}
 
-var notesFieldsWritable = []string{ //nolint:gochecknoglobals
-	notesUserIDColumn,
-	notesActivityIDColumn,
-	notesObjectIDColumn,
-	notesContentColumn,
-	notesPublishedColumn,
-	notesToColumn,
-	notesCcColumn,
-	notesCreatedAtColumn,
-	notesUpdatedAtColumn}
+var notesFieldsWritable = notesFields //nolint:gochecknoglobals
 
 // An NoteRecord is a database record containing a note.
 type NoteRecord struct {

@@ -20,6 +20,7 @@ type Config struct {
 	AppEnv         AppEnv `mapstructure:"app_env"`
 	DatabaseURL    string `mapstructure:"database_url"`
 	APIKey         string `mapstructure:"api_key"`
+	RunWorkers     bool   `mapstructure:"run_workers"`
 	SpacesSecret   string `mapstructure:"do_spaces_secret"`
 	SpacesKeyID    string `mapstructure:"do_spaces_key_id"`
 	SpacesEndpoint string `mapstructure:"do_spaces_endpoint"`
@@ -88,6 +89,10 @@ func Port() string {
 	return GlobalConfig.Port
 }
 
+func RunWorkers() bool {
+	return GlobalConfig.RunWorkers
+}
+
 // LoadConfig loads the configuration from flags and configuration files into
 // the given context.
 func LoadConfig() (Config, error) {
@@ -99,6 +104,7 @@ func LoadConfig() (Config, error) {
 	viper.SetDefault("do_spaces_key_id", "")
 	viper.SetDefault("do_spaces_endpoint", "")
 	viper.SetDefault("do_spaces_bucket", "")
+	viper.SetDefault("run_workers", true)
 
 	viper.AddConfigPath(".")
 	viper.SetConfigName("config")

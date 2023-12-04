@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	"github.com/jclem/jclem.me/internal/activitypub/identity"
+	"github.com/jclem/jclem.me/internal/database"
 	"github.com/riverqueue/river"
 )
 
@@ -20,7 +21,7 @@ type HandleOutboxArgs struct {
 	FollowerID string `json:"follower_id"`
 
 	// UserRecordID is the ID of the user that the activity is for.
-	UserRecordID int64 `json:"user_record_id"`
+	UserRecordID database.ULID `json:"user_record_id"`
 }
 
 func (a HandleOutboxArgs) Kind() string {

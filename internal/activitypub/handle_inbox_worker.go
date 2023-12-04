@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	"github.com/jclem/jclem.me/internal/activitypub/identity"
+	"github.com/jclem/jclem.me/internal/database"
 	"github.com/riverqueue/river"
 )
 
@@ -17,7 +18,7 @@ type HandleInboxArgs struct {
 	ActivityID string `json:"activity_id"`
 
 	// UserRecordID is the ID of the user that the activity is for.
-	UserRecordID int64 `json:"user_record_id"`
+	UserRecordID database.ULID `json:"user_record_id"`
 }
 
 func (a HandleInboxArgs) Kind() string {
@@ -56,7 +57,7 @@ func (w *HandleInboxWorker) Work(ctx context.Context, job *river.Job[HandleInbox
 	return nil
 }
 
-func (w *HandleInboxWorker) handleFollow(ctx context.Context, userRecordID int64, ar ActivityRecord, ao Activity[any]) error {
+func (w *HandleInboxWorker) handleFollow(ctx context.Context, userRecordID database.ULID, ar ActivityRecord, ao Activity[any]) error {
 	if err := w.createFollower(ctx, userRecordID, ar, ao.Actor); err != nil {
 		slog.ErrorContext(ctx, "failed to create follower", "error", err)
 		return err
@@ -70,7 +71,7 @@ func (w *HandleInboxWorker) handleFollow(ctx context.Context, userRecordID int64
 	return nil
 }
 
-func (w *HandleInboxWorker) handleUndo(ctx context.Context, userRecordID int64, ar ActivityRecord, ao Activity[any]) error {
+func (w *HandleInboxWorker) handleUndo(ctx context.Context, userRecordID database.ULID, ar ActivityRecord, ao Activity[any]) error {
 	// Serialize and deserialize the activity's object to get an Activity[string] struct (the follow).
 	j, err := json.Marshal(ao.Object)
 	if err != nil {
@@ -102,7 +103,7 @@ func (w *HandleInboxWorker) handleUndo(ctx context.Context, userRecordID int64, 
 	return nil
 }
 
-func (w *HandleInboxWorker) createFollower(ctx context.Context, userRecordID int64, activity ActivityRecord, actorID string) error {
+func (w *HandleInboxWorker) createFollower(ctx context.Context, userRecordID database.ULID, activity ActivityRecord, actorID string) error {
 	if activity.Type != followActivityType {
 		return river.JobCancel(fmt.Errorf("activity is not a follow: %s", activity.Type)) //nolint:wrapcheck
 	}
@@ -115,7 +116,7 @@ func (w *HandleInboxWorker) createFollower(ctx context.Context, userRecordID int
 	return nil
 }
 
-func (w *HandleInboxWorker) acceptActivity(ctx context.Context, userRecordID int64, activity ActivityRecord, actorID string) error {
+func (w *HandleInboxWorker) acceptActivity(ctx context.Context, userRecordID database.ULID, activity ActivityRecord, actorID string) error {
 	user, err := w.id.GetUserByID(ctx, userRecordID)
 	if err != nil {
 		err = fmt.Errorf("failed to get user: %w", err)

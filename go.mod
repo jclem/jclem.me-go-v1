@@ -4,6 +4,7 @@ go 1.21.1
 
 require (
 	github.com/go-chi/chi/v5 v5.0.10
+	github.com/oklog/ulid/v2 v2.1.0
 	github.com/riverqueue/river v0.0.10
 	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.0.10
 	github.com/yuin/goldmark v1.5.6
@@ -20,7 +21,6 @@ require (
 	github.com/lann/ps v0.0.0-20150810152359-62de8c46ede0 // indirect
 	github.com/magiconair/properties v1.8.7 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
-	github.com/oklog/ulid/v2 v2.1.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.1.0 // indirect
 	github.com/sagikazarmark/locafero v0.3.0 // indirect
 	github.com/sagikazarmark/slog-shim v0.1.0 // indirect
@@ -44,7 +44,6 @@ require (
 	github.com/go-chi/hostrouter v0.2.0
 	github.com/go-chi/httplog/v2 v2.0.7
 	github.com/go-fed/httpsig v1.1.0
-	github.com/google/uuid v1.4.0
 	github.com/jackc/pgx/v5 v5.5.0
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/spf13/viper v1.17.0

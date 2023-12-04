@@ -7,9 +7,9 @@ import (
 	"slices"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/jclem/jclem.me/internal/activitypub/identity"
 	"github.com/jclem/jclem.me/internal/activitypub/orderedmap"
+	"github.com/oklog/ulid/v2"
 )
 
 // ActivityStreamsContext is the ActivityStreams context.
@@ -175,7 +175,7 @@ func NewCreateActivity[T any](actor ActorLike, object T, published string, to, c
 	return Activity[T]{
 		Context:   NewContext(ActivityStreamsContext),
 		Type:      createActivityType,
-		ID:        ActorID(actor) + "/outbox/" + uuid.NewString(),
+		ID:        ActorID(actor) + "/outbox/" + ulid.Make().String(),
 		Actor:     ActorID(actor),
 		Object:    object,
 		Published: published,
@@ -204,7 +204,7 @@ func NewNote(actor ActorLike, content string, to, cc []string) Note {
 	return Note{
 		Context:      NewContext(ActivityStreamsContext, MastodonContext),
 		Type:         "Note",
-		ID:           ActorID(actor) + "/notes/" + uuid.NewString(),
+		ID:           ActorID(actor) + "/notes/" + ulid.Make().String(),
 		AttributedTo: ActorID(actor),
 		Content:      content,
 		Published:    time.Now().UTC().Format(http.TimeFormat),
