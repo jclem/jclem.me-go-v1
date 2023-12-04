@@ -120,10 +120,20 @@ func (s *Service) handleOutbox(ctx context.Context, tx pgx.Tx, userRecordID data
 func (s *Service) insertActivityRecord(ctx context.Context, tx pgx.Tx, userRecordID database.ULID, mailbox Mailbox, context, typ, id string, data []byte) (ActivityRecord, error) {
 	now := time.Now().UTC()
 
-	// Extract generated ULID from the activity object's object ID, which is a URL.
-	// The ULID is the last segment of the URL.
-	parts := strings.Split(id, "/")
-	activityRecordID := parts[len(parts)-1]
+	var activityRecordID database.ULID
+	if mailbox == Outbox {
+		// Extract generated ULID from the activity object's object ID, which is a URL.
+		// The ULID is the last segment of the URL.
+		parts := strings.Split(id, "/")
+		activityRecordIDStr := parts[len(parts)-1]
+		rid, err := database.ParseULID(activityRecordIDStr)
+		if err != nil {
+			return ActivityRecord{}, fmt.Errorf("failed to parse activity record ID: %w", err)
+		}
+		activityRecordID = rid
+	} else {
+		activityRecordID = database.NewULID()
+	}
 
 	query, args, err := s.sql.
 		Insert(activitiesTable).
