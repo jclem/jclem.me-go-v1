@@ -67,3 +67,8 @@ func ParseULID(s string) (ULID, error) {
 
 	return ULID(u), nil
 }
+
+// NewULID generates a new ULID.
+func NewULID() ULID {
+	return ULID(ulid.Make())
+}
