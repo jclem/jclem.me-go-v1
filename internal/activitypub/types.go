@@ -15,6 +15,9 @@ import (
 // ActivityStreamsContext is the ActivityStreams context.
 const ActivityStreamsContext = "https://www.w3.org/ns/activitystreams"
 
+// PublicNS is the public namespace.
+const PublicNS = ActivityStreamsContext + "#Public"
+
 // SecurityContext is the security context (for public keys on actors).
 const SecurityContext = "https://w3id.org/security/v1"
 

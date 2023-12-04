@@ -193,6 +193,10 @@ func (s *Service) GetNoteByID(ctx context.Context, id database.ULID) (NoteRecord
 		return NoteRecord{}, fmt.Errorf("failed to get note by ID: %w", err)
 	}
 
+	if !n.IsPublic() {
+		return NoteRecord{}, ErrNoteNotFound
+	}
+
 	return n, nil
 }
 
@@ -543,6 +547,22 @@ func (n *NoteRecord) ToNote(user Actor) *Note {
 		To:           n.To,
 		Cc:           n.Cc,
 	}
+}
+
+func (n *NoteRecord) IsPublic() bool {
+	for _, to := range n.To {
+		if to == PublicNS {
+			return true
+		}
+	}
+
+	for _, cc := range n.Cc {
+		if cc == PublicNS {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (n *NoteRecord) scannableFields() []any {
