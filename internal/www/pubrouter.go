@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	ap "github.com/jclem/jclem.me/internal/activitypub"
 	"github.com/jclem/jclem.me/internal/activitypub/identity"
+	"github.com/jclem/jclem.me/internal/database"
 	"github.com/jclem/jclem.me/internal/webfinger"
 	"github.com/jclem/jclem.me/internal/www/config"
 )
@@ -163,7 +164,27 @@ func (p *pubRouter) acceptActivity(w http.ResponseWriter, r *http.Request) {
 
 func (p *pubRouter) getNote(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	returnCodeError(r.Context(), w, http.StatusNotFound, fmt.Sprintf("note not found: %q", id))
+	ulid, err := database.ParseULID(id)
+	if err != nil {
+		returnCodeError(r.Context(), w, http.StatusBadRequest, "invalid note id")
+		return
+	}
+
+	note, err := p.pub.GetNoteByID(r.Context(), ulid)
+	if err != nil {
+		if errors.Is(err, ap.ErrNoteNotFound) {
+			returnCodeError(r.Context(), w, http.StatusNotFound, "note not found")
+			return
+		}
+
+		returnError(r.Context(), w, err, "error getting note")
+		return
+	}
+
+	if err := json.NewEncoder(w).Encode(note); err != nil {
+		returnError(r.Context(), w, err, "error encoding note")
+		return
+	}
 }
 
 func (p *pubRouter) getOutbox(w http.ResponseWriter, r *http.Request) {

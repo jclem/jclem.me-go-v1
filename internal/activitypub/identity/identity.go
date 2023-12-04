@@ -185,7 +185,7 @@ var signingKeysFields = []string{ //nolint:gochecknoglobals
 
 // A SigningKey is a public key in PEM format.
 type SigningKey struct {
-	ID        int64         `json:"id"`
+	ID        database.ULID `json:"id"`
 	UserID    database.ULID `json:"user_id"`
 	Kind      string        `json:"kind"`
 	PEM       string        `json:"pem"`
@@ -296,7 +296,7 @@ var apiKeysFields = []string{ //nolint:gochecknoglobals
 
 // An APIKey is a key used to verify a user's API requests.
 type APIKey struct {
-	ID        int64         `json:"id"`
+	ID        database.ULID `json:"id"`
 	UserID    database.ULID `json:"user_id"`
 	Value     string        `json:"value"`
 	CreatedAt time.Time     `json:"created_at"`

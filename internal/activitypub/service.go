@@ -170,6 +170,32 @@ func (s *Service) insertNote(ctx context.Context, tx pgx.Tx, userRecordID databa
 	return n, nil
 }
 
+// ErrNoteNotFound is returned when a note is not found.
+var ErrNoteNotFound = errors.New("note not found")
+
+// GetNoteByID gets a note by its record ID.
+func (s *Service) GetNoteByID(ctx context.Context, id database.ULID) (NoteRecord, error) {
+	query, args, err := s.sql.
+		Select(notesFields...).
+		From(notesTable).
+		Where(squirrel.Eq{notesRecordIDColumn: id}).
+		ToSql()
+	if err != nil {
+		return NoteRecord{}, fmt.Errorf("failed to build query: %w", err)
+	}
+
+	var n NoteRecord
+	if err := s.pool.QueryRow(ctx, query, args...).Scan(n.scannableFields()...); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return NoteRecord{}, ErrNoteNotFound
+		}
+
+		return NoteRecord{}, fmt.Errorf("failed to get note by ID: %w", err)
+	}
+
+	return n, nil
+}
+
 // ErrActivityNotFound is returned when an activity is not found.
 var ErrActivityNotFound = errors.New("activity not found")
 
@@ -388,15 +414,15 @@ var activitiesFieldsWritable = activitiesFields //nolint:gochecknoglobals
 // An ActivityRecord is a database record containing an ActivityPub activity.
 // SEE: https://www.w3.org/TR/activitystreams-vocabulary/#dfn-activity
 type ActivityRecord struct {
-	RecordID  int64     `json:"record_id"`
-	UserID    int64     `json:"user_id"`
-	Mailbox   Mailbox   `json:"mailbox"`
-	Context   string    `json:"@context"`
-	Type      string    `json:"type"`
-	ID        string    `json:"id"`
-	Data      []byte    `json:"data"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	RecordID  database.ULID `json:"record_id"`
+	UserID    database.ULID `json:"user_id"`
+	Mailbox   Mailbox       `json:"mailbox"`
+	Context   string        `json:"@context"`
+	Type      string        `json:"type"`
+	ID        string        `json:"id"`
+	Data      []byte        `json:"data"`
+	CreatedAt time.Time     `json:"created_at"`
+	UpdatedAt time.Time     `json:"updated_at"`
 }
 
 func (a *ActivityRecord) scannableFields() []any {
@@ -447,12 +473,12 @@ var followersFieldsWritable = []string{ //nolint:gochecknoglobals
 
 // An FollowerRecord is a database record containing a follower of a user.
 type FollowerRecord struct {
-	RecordID   int64     `json:"record_id"`
-	UserID     int64     `json:"user_id"`
-	ActorID    string    `json:"actor_id"`
-	ActivityID string    `json:"activity_id"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	RecordID   database.ULID `json:"record_id"`
+	UserID     database.ULID `json:"user_id"`
+	ActorID    string        `json:"actor_id"`
+	ActivityID string        `json:"activity_id"`
+	CreatedAt  time.Time     `json:"created_at"`
+	UpdatedAt  time.Time     `json:"updated_at"`
 }
 
 func (a *FollowerRecord) scannableFields() []any {
@@ -494,16 +520,16 @@ var notesFieldsWritable = notesFields //nolint:gochecknoglobals
 
 // An NoteRecord is a database record containing a note.
 type NoteRecord struct {
-	RecordID   int64
-	UserID     int64
-	ActivityID string
-	ObjectID   string
-	Content    string
-	Published  time.Time
-	To         []string
-	Cc         []string
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	RecordID   database.ULID `json:"id"`
+	UserID     database.ULID `json:"user_id"`
+	ActivityID string        `json:"activity_id"`
+	ObjectID   string        `json:"object_id"`
+	Content    string        `json:"content"`
+	Published  time.Time     `json:"published"`
+	To         []string      `json:"to"`
+	Cc         []string      `json:"cc"`
+	CreatedAt  time.Time     `json:"created_at"`
+	UpdatedAt  time.Time     `json:"updated_at"`
 }
 
 func (n *NoteRecord) ToNote(user Actor) *Note {
