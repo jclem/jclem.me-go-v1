@@ -12,6 +12,7 @@ import (
 	"github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jclem/jclem.me/internal/activitypub/orderedmap"
 )
 
 // A Service handles identity requests.
@@ -224,39 +225,39 @@ var usersFields = []string{ //nolint:gochecknoglobals
 
 // A User is a user of the system.
 type User struct {
-	ID        int64             `json:"id"`
-	Email     string            `json:"email"`
-	Username  string            `json:"username"`
-	Summary   string            `json:"summary"`
-	Name      string            `json:"name"`
-	ImageURL  string            `json:"image_url"`
-	Metadata  map[string]string `json:"metadata"`
-	CreatedAt time.Time         `json:"created_at"`
-	UpdatedAt time.Time         `json:"updated_at"`
+	ID        int64                 `json:"id"`
+	Email     string                `json:"email"`
+	Username  string                `json:"username"`
+	Summary   string                `json:"summary"`
+	Name      string                `json:"name"`
+	ImageURL  string                `json:"image_url"`
+	Metadata  orderedmap.OrderedMap `json:"metadata"`
+	CreatedAt time.Time             `json:"created_at"`
+	UpdatedAt time.Time             `json:"updated_at"`
 }
 
-// GetUsername implements the activitypub.Actorish interface.
+// GetUsername implements the activitypub.ActorLike interface.
 func (u User) GetUsername() string {
 	return u.Username
 }
 
-// GetSummary implements the activitypub.Actorish interface.
+// GetSummary implements the activitypub.ActorLike interface.
 func (u User) GetSummary() string {
 	return u.Summary
 }
 
-// GetName implements the activitypub.Actorish interface.
+// GetName implements the activitypub.ActorLike interface.
 func (u User) GetName() string {
 	return u.Name
 }
 
-// GetImageURL implements the activitypub.Actorish interface.
+// GetImageURL implements the activitypub.ActorLike interface.
 func (u User) GetImageURL() string {
 	return u.ImageURL
 }
 
-// GetAttachment implements the activitypub.Actorish interface.
-func (u User) GetAttachment() map[string]string {
+// GetAttachment implements the activitypub.ActorLike interface.
+func (u User) GetAttachment() orderedmap.OrderedMap {
 	return u.Metadata
 }
 

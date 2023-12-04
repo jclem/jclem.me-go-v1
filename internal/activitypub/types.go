@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jclem/jclem.me/internal/activitypub/identity"
+	"github.com/jclem/jclem.me/internal/activitypub/orderedmap"
 )
 
 // ActivityStreamsContext is the ActivityStreams context.
@@ -170,7 +171,7 @@ func newAcceptActivity(actorID string, activityID string) Activity[string] {
 }
 
 // NewCreateActivity creates a new Create activity.
-func NewCreateActivity[T any](actor Actorish, object T, published string, to, cc []string) Activity[T] {
+func NewCreateActivity[T any](actor ActorLike, object T, published string, to, cc []string) Activity[T] {
 	return Activity[T]{
 		Context:   NewContext(ActivityStreamsContext),
 		Type:      createActivityType,
@@ -199,7 +200,7 @@ type Note struct {
 }
 
 // NewNote creates a new Note.
-func NewNote(actor Actorish, content string, to, cc []string) Note {
+func NewNote(actor ActorLike, content string, to, cc []string) Note {
 	return Note{
 		Context:      NewContext(ActivityStreamsContext, MastodonContext),
 		Type:         "Note",
@@ -239,48 +240,48 @@ type Actor struct {
 	PublicKey                 PublicKey          `json:"publicKey,omitempty"`
 }
 
-// An Actorish is an interface for types that can be actors (they have
+// An ActorLike is an interface for types that can be actors (they have
 // usernames).
-type Actorish interface {
+type ActorLike interface {
 	GetName() string
 	GetImageURL() string
 	GetSummary() string
 	GetUsername() string
-	GetAttachment() map[string]string
+	GetAttachment() orderedmap.OrderedMap
 }
 
 // ActorID gets the ID of the actor.
-func ActorID(actor Actorish) string {
+func ActorID(actor ActorLike) string {
 	return fmt.Sprintf("https://%s/~%s", Domain, actor.GetUsername())
 }
 
 // ActorOutbox gets the outbox of the actor.
-func ActorOutbox(actor Actorish) string {
+func ActorOutbox(actor ActorLike) string {
 	return fmt.Sprintf("https://%s/~%s/outbox", Domain, actor.GetUsername())
 }
 
 // ActorFollowers gets the followers collection of the actor.
-func ActorFollowers(actor Actorish) string {
+func ActorFollowers(actor ActorLike) string {
 	return fmt.Sprintf("https://%s/~%s/followers", Domain, actor.GetUsername())
 }
 
 // ActorFollowing gets the following collection of the actor.
-func ActorFollowing(actor Actorish) string {
+func ActorFollowing(actor ActorLike) string {
 	return fmt.Sprintf("https://%s/~%s/following", Domain, actor.GetUsername())
 }
 
 // ActorInbox gets the inbox of the actor.
-func ActorInbox(actor Actorish) string {
+func ActorInbox(actor ActorLike) string {
 	return fmt.Sprintf("https://%s/~%s/inbox", Domain, actor.GetUsername())
 }
 
 // ActorPublicKeyID gets the ID of the public key of the actor.
-func ActorPublicKeyID(actor Actorish) string {
+func ActorPublicKeyID(actor ActorLike) string {
 	return ActorID(actor) + "#main-key"
 }
 
 // ActorFromUser gets an actor from a system user.
-func ActorFromUser(user Actorish, pubKey identity.SigningKey) (Actor, error) {
+func ActorFromUser(user ActorLike, pubKey identity.SigningKey) (Actor, error) {
 	username := user.GetUsername()
 
 	var icon Image
@@ -294,13 +295,16 @@ func ActorFromUser(user Actorish, pubKey identity.SigningKey) (Actor, error) {
 	}
 
 	var attachment []SchemaAttachment
-	if user.GetAttachment() != nil {
-		for k, v := range user.GetAttachment() {
-			attachment = append(attachment, SchemaAttachment{
+
+	if userAttachment := user.GetAttachment(); userAttachment != nil {
+		attachment := make([]SchemaAttachment, len(userAttachment))
+
+		for i, item := range userAttachment {
+			attachment[i] = SchemaAttachment{
 				Type:  "PropertyValue",
-				Name:  k,
-				Value: v,
-			})
+				Name:  item.Name,
+				Value: item.Value,
+			}
 		}
 	}
 
