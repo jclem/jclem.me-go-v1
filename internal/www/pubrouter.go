@@ -122,10 +122,7 @@ func (p *pubRouter) createActivity(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Location", a.ID)
 	w.WriteHeader(http.StatusCreated)
 
-	if err := json.NewEncoder(w).Encode(a); err != nil {
-		returnError(r.Context(), w, err, "error encoding activity")
-		return
-	}
+	writeResponse(w, r, a)
 }
 
 func (p *pubRouter) acceptActivity(w http.ResponseWriter, r *http.Request) {
@@ -156,10 +153,7 @@ func (p *pubRouter) acceptActivity(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusCreated)
 
-	if err := json.NewEncoder(w).Encode(ar); err != nil {
-		returnError(r.Context(), w, err, "error encoding activity")
-		return
-	}
+	writeResponse(w, r, ar)
 }
 
 func (p *pubRouter) getNote(w http.ResponseWriter, r *http.Request) {
@@ -181,10 +175,7 @@ func (p *pubRouter) getNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := json.NewEncoder(w).Encode(note); err != nil {
-		returnError(r.Context(), w, err, "error encoding note")
-		return
-	}
+	writeResponse(w, r, note)
 }
 
 func (p *pubRouter) getOutbox(w http.ResponseWriter, r *http.Request) {
@@ -209,10 +200,7 @@ func (p *pubRouter) getOutbox(w http.ResponseWriter, r *http.Request) {
 	}
 
 	collection := ap.NewCollection(ap.ActorOutbox(user), itemObjects)
-	if err := json.NewEncoder(w).Encode(collection); err != nil {
-		returnError(r.Context(), w, err, "error encoding actor")
-		return
-	}
+	writeResponse(w, r, collection)
 }
 
 func (p *pubRouter) listFollowers(w http.ResponseWriter, r *http.Request) {
@@ -230,20 +218,14 @@ func (p *pubRouter) listFollowers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	collection := ap.NewCollection(ap.ActorFollowers(user), followerIDs)
-	if err := json.NewEncoder(w).Encode(collection); err != nil {
-		returnError(r.Context(), w, err, "error encoding collection")
-		return
-	}
+	writeResponse(w, r, collection)
 }
 
 func (p *pubRouter) listFollowing(w http.ResponseWriter, r *http.Request) {
 	user := r.Context().Value(userContextKey).(identity.User) //nolint:forceTypeAssert
 
 	collection := ap.NewCollection(ap.ActorFollowing(user), []string{})
-	if err := json.NewEncoder(w).Encode(collection); err != nil {
-		returnError(r.Context(), w, err, "error encoding collection")
-		return
-	}
+	writeResponse(w, r, collection)
 }
 
 var webfingerResourceRegex = regexp.MustCompile(`^acct:([^@]+)@([^@]+)$`)
@@ -279,7 +261,7 @@ func (p *pubRouter) handleWebfinger(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := json.NewEncoder(w).Encode(webfinger.JRD{
+	writeResponse(w, r, webfinger.JRD{
 		Subject: resource,
 		Aliases: []string{ap.ActorID(user)},
 		Links: []webfinger.Link{
@@ -289,10 +271,7 @@ func (p *pubRouter) handleWebfinger(w http.ResponseWriter, r *http.Request) {
 				Href: ap.ActorID(user),
 			},
 		},
-	}); err != nil {
-		returnError(r.Context(), w, err, "error encoding webfinger response")
-		return
-	}
+	})
 }
 
 func (p *pubRouter) setContentType(next http.Handler) http.Handler {
@@ -413,8 +392,17 @@ func (p *pubRouter) getUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := json.NewEncoder(w).Encode(actor); err != nil {
-		returnError(r.Context(), w, err, "error encoding actor")
+	writeResponse(w, r, actor)
+}
+
+func writeResponse(w http.ResponseWriter, r *http.Request, resp interface{}) {
+	enc := json.NewEncoder(w)
+	if strings.Contains(r.Header.Get("Accept"), "text/html") {
+		enc.SetIndent("", "  ")
+	}
+
+	if err := enc.Encode(resp); err != nil {
+		returnError(r.Context(), w, err, "error encoding response")
 		return
 	}
 }
