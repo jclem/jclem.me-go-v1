@@ -254,28 +254,28 @@ type ActorLike interface {
 }
 
 // ActorID gets the ID of the actor.
-func ActorID(actor ActorLike) string {
-	return fmt.Sprintf("https://%s/~%s", Domain, actor.GetUsername())
+func ActorID(_ ActorLike) string {
+	return fmt.Sprintf("https://%s", Domain)
 }
 
 // ActorOutbox gets the outbox of the actor.
-func ActorOutbox(actor ActorLike) string {
-	return fmt.Sprintf("https://%s/~%s/outbox", Domain, actor.GetUsername())
+func ActorOutbox(_ ActorLike) string {
+	return fmt.Sprintf("https://%s/outbox", Domain)
 }
 
 // ActorFollowers gets the followers collection of the actor.
-func ActorFollowers(actor ActorLike) string {
-	return fmt.Sprintf("https://%s/~%s/followers", Domain, actor.GetUsername())
+func ActorFollowers(_ ActorLike) string {
+	return fmt.Sprintf("https://%s/followers", Domain)
 }
 
 // ActorFollowing gets the following collection of the actor.
-func ActorFollowing(actor ActorLike) string {
-	return fmt.Sprintf("https://%s/~%s/following", Domain, actor.GetUsername())
+func ActorFollowing(_ ActorLike) string {
+	return fmt.Sprintf("https://%s/following", Domain)
 }
 
 // ActorInbox gets the inbox of the actor.
-func ActorInbox(actor ActorLike) string {
-	return fmt.Sprintf("https://%s/~%s/inbox", Domain, actor.GetUsername())
+func ActorInbox(_ ActorLike) string {
+	return fmt.Sprintf("https://%s/inbox", Domain)
 }
 
 // ActorPublicKeyID gets the ID of the public key of the actor.

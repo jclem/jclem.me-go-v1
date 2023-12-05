@@ -56,7 +56,7 @@ func newPubRouter() (*pubRouter, error) {
 	p := &pubRouter{Mux: r, id: id, pub: pub}
 	r.Use(p.setContentType)
 	r.Get("/.well-known/webfinger", p.handleWebfinger)
-	r.Mount("/~{username}", p.userRouter())
+	r.Mount("/", p.userRouter())
 
 	return p, nil
 }
@@ -281,10 +281,10 @@ func (p *pubRouter) setContentType(next http.Handler) http.Handler {
 	})
 }
 
+const username = "jclem"
+
 func (p *pubRouter) ensureUser(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		username := chi.URLParam(r, "username")
-
 		user, err := p.id.GetUserByUsername(r.Context(), username)
 		if err != nil {
 			returnCodeError(r.Context(), w, http.StatusNotFound, fmt.Sprintf("user not found: %q", username))
